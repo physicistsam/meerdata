@@ -1,0 +1,6 @@
+click
+python-casacore
+katdal
+matplotlib
+git+https://github.com/meerklass/ivory.git
+git+https://github.com/meerklass/museek.git
