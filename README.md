@@ -24,6 +24,13 @@ A make up word from Afrikaans word "meer" meaning "more" and an English word dat
    * Creates a `logs/` directory for SLURM output files
 4. You can then close the interactive shell
 
+## Obtaining RDB link
+
+To access recent MeerKLASS data, you will need a permission from our PI.
+
+A link to the raw `.rdb` file containing the metadata of the data block is required to run sanity check or download it. The RDB link can be obtained by clicking on "COPY RDB LINK" (now ".RDB FILE LINK" after their recent update) on the top right corner.
+![SARAO Archive interface showing RDB link ](https://archive.sarao.ac.za/block-annotated.webp)
+
 ## Usage
 
 The `meerdata.py` script provides two main commands:
