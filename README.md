@@ -31,6 +31,15 @@ To access recent MeerKLASS data, you will need a permission from our PI.
 A link to the raw `.rdb` file containing the metadata of the data block is required to run sanity check or download it. The RDB link can be obtained by clicking on "COPY RDB LINK" (now ".RDB FILE LINK" after their recent update) on the top right corner.
 ![SARAO Archive interface showing RDB link ](https://archive.sarao.ac.za/block-annotated.webp)
 
+## Activate Python environment
+
+To use this tool, activate the meerdata Python environment installed by the `setup.sh` script.
+```bash
+source venv/meerdata/bin/activate
+```
+
+Any other Python environment with modules listed in the `requirements.txt` can also be used.
+
 ## Usage
 
 The `meerdata.py` script provides two main commands:
