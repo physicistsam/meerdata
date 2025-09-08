@@ -95,6 +95,10 @@ python meerdata.py check -r "RDB_LINK"
 python meerdata.py check -r "https://archive-gw-1.kat.ac.za/1234567890/1234567890_sdp_l0.full.rdb?token=abc123"
 ```
 
+The sanity check should take about 5 minutes to run. Otherwise, there is likely a networking issue, which can happen from time to time. Simply resubmit the job on the same block.
+
+Once ran, the "formatted output" should be copy to the MeerKLASS data tracking spread sheet.
+
 ## How It Works
 
 ### Pull Command
