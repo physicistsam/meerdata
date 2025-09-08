@@ -10,7 +10,11 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 
 rdb_link_option = click.option(
     '-r', '--rdb-link', required=True, help='SARAO Archive RDB file link (full url).'
 )
-
+dry_run_option = click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Create sbatch scripts but do not submit them and exit the program"
+)
 
 def _validate_venv(ctx, param, value):
     def_err = "You can execute the `setup.sh` bash script in the repository to set one up."
@@ -91,13 +95,13 @@ module load rclone
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 RDB_LINK="{rdb_link}"
-dest={full_dest}
+fulldest={full_dest}
 
 which rclone
 echo $RDB_LINK
 echo $dest
 
-mvf_download.py --workers=$SLURM_CPUS_PER_TASK "$RDB_LINK" $dest --stats=15m --stats-one-line || /opt/slurm/bin/scontrol requeue $SLURM_JOB_ID"""
+mvf_download.py --workers=$SLURM_CPUS_PER_TASK "$RDB_LINK" $fulldest --stats=15m --stats-one-line || /opt/slurm/bin/scontrol requeue $SLURM_JOB_ID"""
     
     scripts['download'] = _create_sbatch_script(
         "download_MVF", cbid, 8, "16GB", "48:00:00", script_body=download_body
@@ -203,7 +207,7 @@ echo "Executing command: {museek_cmd}"
 """
 
 
-def _write_and_submit_pull_jobs(scripts, correlation, cbid):
+def _write_and_submit_pull_jobs(scripts, correlation, cbid, dry_run=False):
     """Write sbatch scripts to files and submit jobs based on correlation type."""
     # Create sbatch directory if it doesn't exist
     sbatch_dir = Path("./sbatch")
@@ -216,6 +220,11 @@ def _write_and_submit_pull_jobs(scripts, correlation, cbid):
         script_files[script_type] = sbatch_dir / filename
         with open(script_files[script_type], "w") as f:
             f.write(content)
+        click.echo(f"Created sbatch script: {script_files[script_type]}")
+    
+    if dry_run:
+        click.echo("Dry run mode: Scripts created but not submitted")
+        return []
     
     # Submit jobs
     job_ids = []
@@ -275,7 +284,8 @@ def cli():
     show_default=True,
     help="Directory for storing the data"
 )
-def pull(rdb_link, correlation, data_folder):
+@dry_run_option
+def pull(rdb_link, correlation, data_folder, dry_run):
     """Download the data block."""
     cbid, token = _extract_cbid_and_token_from_rdb_link(rdb_link)
     
@@ -295,9 +305,12 @@ def pull(rdb_link, correlation, data_folder):
     
     # Create and submit jobs
     scripts = _create_pull_scripts(rdb_link, cbid, dest, full_dest, ms_path, local_rdb)
-    job_ids = _write_and_submit_pull_jobs(scripts, correlation, cbid)
+    job_ids = _write_and_submit_pull_jobs(scripts, correlation, cbid, dry_run)
     
-    click.echo(f"All jobs submitted with IDs: {','.join(job_ids)}")
+    if dry_run:
+        click.echo("Dry run completed: All sbatch scripts created")
+    else:
+        click.echo(f"All jobs submitted with IDs: {','.join(job_ids)}")
 
 
 @cli.command()
@@ -318,10 +331,12 @@ def pull(rdb_link, correlation, data_folder):
     callback=_validate_venv,
     help="Path to the Python virtual environment to use.",
 )
+@dry_run_option
 def check(
     rdb_link,
     context_folder,
     venv_path,
+    dry_run,
 ):
     """Run sanity check on the data block."""    
     # Validate inputs and extract block_number/token
@@ -347,8 +362,11 @@ def check(
         click.echo("-------END OF SBATCH-------")
         fl.write(program)
     
-    click.echo(f"==> Submitting the SBATCH script")
-    subprocess.run(["sbatch", f"{sbatch_file.as_posix()}"], check=True)
+    if dry_run:
+        click.echo("Dry run mode: Script created but not submitted")
+    else:
+        click.echo(f"==> Submitting the SBATCH script")
+        subprocess.run(["sbatch", f"{sbatch_file.as_posix()}"], check=True)
 
 
 if __name__ == "__main__":
