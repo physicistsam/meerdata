@@ -47,7 +47,11 @@ def _extract_cbid_and_token_from_rdb_link(rdb_link):
 
 def _create_sbatch_script(job_name, cbid, cpus, mem, time, account="b205-meerklass-ag", 
                          partition="Main", additional_directives="", script_body=""):
-    """Create a standardized SLURM sbatch script."""
+    """Create a standardized SLURM sbatch script.
+    
+    The SBATCH header is mostly fixed although the resource allocation will be adjusted
+    based on the passing parameters.
+    """
     return f"""#!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -79,8 +83,10 @@ def _create_pull_scripts(rdb_link, cbid, dest, full_dest, ms_path, local_rdb):
     """Create all sbatch scripts needed for data pulling."""
     scripts = {}
     
+    python_source = "source ./venv/meerdata/bin/activate"
+
     # Download script
-    download_body = f"""source ./katdal/bin/activate
+    download_body = f"""{python_source}
 module load rclone
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
@@ -100,7 +106,7 @@ mvf_download.py --workers=$SLURM_CPUS_PER_TASK "$RDB_LINK" $dest --stats=15m --s
     # Auto extraction script
     auto_body = f"""export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-source ./katdal/bin/activate
+{python_source}
 
 localRDB={local_rdb}
 dest={dest}
@@ -109,16 +115,16 @@ echo running mvf_copy
 echo $localRDB
 echo $dest
 
-python mvftoms-OTF-patch.py $localRDB --auto --out $dest"""
+mvf_copy.py --corrprods=auto --workers=$SLURM_CPUS_PER_TASK $localRDB $dest"""
     
     scripts['auto'] = _create_sbatch_script(
-        "ext_autos", cbid, 30, "50GB", "00:450:00", script_body=auto_body
+        "ext_autos", cbid, 30, "50GB", "00:45:00", script_body=auto_body
     )
     
     # MS extraction script
     ms_body = f"""export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-source ./katdal/bin/activate
+{python_source}
 
 localRDB={local_rdb}
 MS={ms_path}
@@ -127,7 +133,7 @@ echo running mvftoms
 echo $localRDB
 echo $MS
 
-python mvftoms-OTF-patch.py $localRDB --ms $MS"""
+python mvftoms-OTF-patch.py -o $MS -v -f $localRDB"""
     
     scripts['ms'] = _create_sbatch_script(
         "ext_MS", cbid, 24, "50GB", "02:00:00", 
