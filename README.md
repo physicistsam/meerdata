@@ -1,6 +1,6 @@
 # MeerKLASS Data Management Tool
 
-A unified command-line interface for downloading and running sanity checks on MeerKLASS data from the SARAO archive.
+A command-line tool for MeerKLASS data management. It provides functionality for downloading the data and running sanity check on the data blocks, as well as checking the disk usage of downloaded data.
 
 ## Naming
 meerdata (/meːrˈdɑːtə/): 
@@ -42,7 +42,9 @@ Any other Python environment with modules listed in the `requirements.txt` can a
 
 ## Usage
 
-The `meerdata.py` script provides two main commands:
+
+The `meerdata.py` script provides three main commands:
+
 
 ### Pull Command - Download Data
 
@@ -77,6 +79,7 @@ python meerdata.py pull -r "RDB_LINK" --data-folder /path/to/custom/folder
 
 Note that we keep the data folders organised on ilifu. There should be no need to change --data-folder option if you are downloading the lastest campaign (XLP).
 
+
 ### Check Command - Run Sanity Checks
 
 ```bash
@@ -98,6 +101,31 @@ python meerdata.py check -r "https://archive-gw-1.kat.ac.za/1234567890/123456789
 The sanity check should take about 5 minutes to run. Otherwise, there is likely a networking issue, which can happen from time to time. Simply resubmit the job on the same block.
 
 Once ran, the "formatted output" should be copy to the MeerKLASS data tracking spread sheet.
+
+### Verify Command - Check Disk Usage and Existent of Data Blocks
+
+```bash
+python meerdata.py verify -b BLOCK_NUMBER [ -b BLOCK_NUMBER ... ]
+```
+
+**Options:**
+
+* `-b, --block-number`: Block number(s) to verify (required, can be specified multiple times)
+* `--context-folder`: Directory containing block directories (default: `/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`)
+
+**Example:**
+
+```bash
+python meerdata.py verify -b 1753129121 -b 1753219043 -b 1753297658
+```
+
+For each block number, this command will:
+
+* Check if the directory `<context-folder>/<block-number>` exists
+* If it exists, report the disk usage in GB
+* If the directory exists but is empty (0 GB), print a `[WARNING]`
+* If the directory does not exist, print `[MISSING]`
+* Print a summary table at the end
 
 ## How It Works
 

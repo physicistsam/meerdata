@@ -8,16 +8,19 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 
 
 
 rdb_link_option = click.option(
-    '-r', '--rdb-link', required=True, help='SARAO Archive RDB file link (full url).'
+    "-r", "--rdb-link", required=True, help="SARAO Archive RDB file link (full url)."
 )
 dry_run_option = click.option(
     "--dry-run",
     is_flag=True,
-    help="Create sbatch scripts but do not submit them and exit the program"
+    help="Create sbatch scripts but do not submit them and exit the program",
 )
 
+
 def _validate_venv(ctx, param, value):
-    def_err = "You can execute the `setup.sh` bash script in the repository to set one up."
+    def_err = (
+        "You can execute the `setup.sh` bash script in the repository to set one up."
+    )
     if not value.exists():
         raise FileNotFoundError(
             f"Python virtual environment directory {value} does not exists. {def_err}"
@@ -31,28 +34,37 @@ def _validate_venv(ctx, param, value):
 
 def _extract_cbid_and_token_from_rdb_link(rdb_link):
     """Extract CBID and token from RDB link URL."""
-    if not rdb_link.startswith('http'):
+    if not rdb_link.startswith("http"):
         raise click.ClickException("RDB link must be a valid URL starting with http")
-    
+
     # Extract CBID from URL path (e.g., /1756679237/1756679237_sdp_l0.full.rdb)
     try:
-        cbid = rdb_link.split('/')[3]  # https://archive-gw-1.kat.ac.za/1756679237/...
+        cbid = rdb_link.split("/")[3]  # https://archive-gw-1.kat.ac.za/1756679237/...
     except IndexError:
         raise click.ClickException("Invalid RDB link format: cannot extract CBID")
-    
+
     # Extract token from query parameter
-    if '?token=' not in rdb_link:
+    if "?token=" not in rdb_link:
         raise click.ClickException("RDB link must contain a token parameter")
-    
-    token = rdb_link.split('?token=')[1]
-    
+
+    token = rdb_link.split("?token=")[1]
+
     return cbid, token
 
 
-def _create_sbatch_script(job_name, cbid, cpus, mem, time, account="b205-meerklass-ag", 
-                         partition="Main", additional_directives="", script_body=""):
+def _create_sbatch_script(
+    job_name,
+    cbid,
+    cpus,
+    mem,
+    time,
+    account="b205-meerklass-ag",
+    partition="Main",
+    additional_directives="",
+    script_body="",
+):
     """Create a standardized SLURM sbatch script.
-    
+
     The SBATCH header is mostly fixed although the resource allocation will be adjusted
     based on the passing parameters.
     """
@@ -78,7 +90,7 @@ def _submit_job(script_path, dependency=None):
     if dependency:
         cmd.extend(["-d", dependency, "--kill-on-invalid-dep=yes"])
     cmd.append(str(script_path))
-    
+
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return result.stdout.strip().split()[-1]
 
@@ -86,7 +98,7 @@ def _submit_job(script_path, dependency=None):
 def _create_pull_scripts(rdb_link, cbid, dest, full_dest, ms_path, local_rdb):
     """Create all sbatch scripts needed for data pulling."""
     scripts = {}
-    
+
     python_source = "source ./venv/meerdata/bin/activate"
 
     # Download script
@@ -102,11 +114,11 @@ echo $RDB_LINK
 echo $dest
 
 mvf_download.py --workers=$SLURM_CPUS_PER_TASK "$RDB_LINK" $fulldest --stats=15m --stats-one-line || /opt/slurm/bin/scontrol requeue $SLURM_JOB_ID"""
-    
-    scripts['download'] = _create_sbatch_script(
+
+    scripts["download"] = _create_sbatch_script(
         "download_MVF", cbid, 8, "16GB", "48:00:00", script_body=download_body
     )
-    
+
     # Auto extraction script
     auto_body = f"""export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
@@ -120,11 +132,11 @@ echo $localRDB
 echo $dest
 
 mvf_copy.py --corrprods=auto --workers=$SLURM_CPUS_PER_TASK $localRDB $dest"""
-    
-    scripts['auto'] = _create_sbatch_script(
+
+    scripts["auto"] = _create_sbatch_script(
         "ext_autos", cbid, 30, "50GB", "00:45:00", script_body=auto_body
     )
-    
+
     # MS extraction script
     ms_body = f"""export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
@@ -138,19 +150,23 @@ echo $localRDB
 echo $MS
 
 python mvftoms-OTF-patch.py -o $MS -v -f $localRDB"""
-    
-    scripts['ms'] = _create_sbatch_script(
-        "ext_MS", cbid, 24, "50GB", "02:00:00", 
+
+    scripts["ms"] = _create_sbatch_script(
+        "ext_MS",
+        cbid,
+        24,
+        "50GB",
+        "02:00:00",
         additional_directives="#SBATCH --error=logs/%x-%j.err",
-        script_body=ms_body
+        script_body=ms_body,
     )
-    
+
     # Cleanup script
     cleanup_body = f"rm -r {full_dest}"
-    scripts['cleanup'] = _create_sbatch_script(
+    scripts["cleanup"] = _create_sbatch_script(
         "cleanup", cbid, 1, "1GB", "0:30:00", script_body=cleanup_body
     )
-    
+
     return scripts
 
 
@@ -212,54 +228,62 @@ def _write_and_submit_pull_jobs(scripts, correlation, cbid, dry_run=False):
     # Create sbatch directory if it doesn't exist
     sbatch_dir = Path("./sbatch")
     sbatch_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Write scripts to files
     script_files = {}
     for script_type, content in scripts.items():
-        filename = f"local_extract_{script_type}-{cbid}.sbatch" if script_type in ['auto', 'ms'] else f"{script_type}_MVF-{cbid}.sbatch" if script_type == 'download' else f"{script_type}-{cbid}.sbatch"
+        filename = (
+            f"local_extract_{script_type}-{cbid}.sbatch"
+            if script_type in ["auto", "ms"]
+            else (
+                f"{script_type}_MVF-{cbid}.sbatch"
+                if script_type == "download"
+                else f"{script_type}-{cbid}.sbatch"
+            )
+        )
         script_files[script_type] = sbatch_dir / filename
         with open(script_files[script_type], "w") as f:
             f.write(content)
         click.echo(f"Created sbatch script: {script_files[script_type]}")
-    
+
     if dry_run:
         click.echo("Dry run mode: Scripts created but not submitted")
         return []
-    
+
     # Submit jobs
     job_ids = []
-    
+
     # Submit download job first
-    download_id = _submit_job(script_files['download'])
+    download_id = _submit_job(script_files["download"])
     job_ids.append(download_id)
     click.echo(f"Submitted download job: {download_id}")
-    
+
     extraction_jobs = []
-    
-    if correlation in ['auto', 'all']:
-        auto_id = _submit_job(script_files['auto'], f"afterok:{download_id}")
+
+    if correlation in ["auto", "all"]:
+        auto_id = _submit_job(script_files["auto"], f"afterok:{download_id}")
         extraction_jobs.append(auto_id)
         click.echo(f"Submitted auto extraction job: {auto_id}")
-    
-    if correlation in ['cross', 'all']:
-        ms_id = _submit_job(script_files['ms'], f"afterok:{download_id}")
+
+    if correlation in ["cross", "all"]:
+        ms_id = _submit_job(script_files["ms"], f"afterok:{download_id}")
         extraction_jobs.append(ms_id)
         click.echo(f"Submitted MS extraction job: {ms_id}")
-    
+
     # Submit cleanup job after all extraction jobs
     if extraction_jobs:
         dependency = ":".join(extraction_jobs)
-        cleanup_id = _submit_job(script_files['cleanup'], f"afterok:{dependency}")
+        cleanup_id = _submit_job(script_files["cleanup"], f"afterok:{dependency}")
         job_ids.extend(extraction_jobs)
         job_ids.append(cleanup_id)
         click.echo(f"Submitted cleanup job: {cleanup_id}")
-    
+
     return job_ids
 
 
 @click.group(
-    context_settings=CONTEXT_SETTINGS, 
-    epilog="Run `python meerdata.py COMMAND -h` for more details."
+    context_settings=CONTEXT_SETTINGS,
+    epilog="Run `python meerdata.py COMMAND -h` for more details.",
 )
 def cli():
     """MeerKLASS data management tool."""
@@ -271,42 +295,42 @@ def cli():
 @click.option(
     "-c",
     "--correlation",
-    type=click.Choice(['auto', 'cross', 'all']),
-    default='auto',
+    type=click.Choice(["auto", "cross", "all"]),
+    default="auto",
     show_default=True,
     help="Type of correlation data to pull: auto (autocorrelations), "
-    "cross (OTF measurement set), all (both)"
+    "cross (OTF measurement set), all (both)",
 )
 @click.option(
     "--data-folder",
     type=click.Path(exists=True, resolve_path=True, path_type=Path),
     default="/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw",
     show_default=True,
-    help="Directory for storing the data"
+    help="Directory for storing the data",
 )
 @dry_run_option
 def pull(rdb_link, correlation, data_folder, dry_run):
-    """Download the data block."""
+    """Download a data block."""
     cbid, token = _extract_cbid_and_token_from_rdb_link(rdb_link)
-    
+
     # Set up directories
     dest = data_folder / cbid
-    full_dest = Path(str(data_folder).replace('/raw', '/raw_full')) / cbid
+    full_dest = Path(str(data_folder).replace("/raw", "/raw_full")) / cbid
     ms_path = dest / f"{cbid}_sdp_l0.ms"
     local_rdb = full_dest / cbid / f"{cbid}_sdp_l0.full.rdb"
-    
+
     # Create directories
     Path("./logs").mkdir(parents=True, exist_ok=True)
     dest.mkdir(parents=True, exist_ok=True)
     full_dest.mkdir(parents=True, exist_ok=True)
-    
+
     click.echo(f"Pulling {correlation} correlation data for CBID: {cbid}")
     click.echo(f"Destination: {dest}")
-    
+
     # Create and submit jobs
     scripts = _create_pull_scripts(rdb_link, cbid, dest, full_dest, ms_path, local_rdb)
     job_ids = _write_and_submit_pull_jobs(scripts, correlation, cbid, dry_run)
-    
+
     if dry_run:
         click.echo("Dry run completed: All sbatch scripts created")
     else:
@@ -338,7 +362,7 @@ def check(
     venv_path,
     dry_run,
 ):
-    """Run sanity check on the data block."""    
+    """Run sanity check on a data block."""
     # Validate inputs and extract block_number/token
     cbid, token = _extract_cbid_and_token_from_rdb_link(rdb_link)
 
@@ -350,10 +374,8 @@ def check(
     Path("./sbatch").mkdir(parents=True, exist_ok=True)
 
     # Create and write the sbatch script
-    program = _create_sanity_check_script(
-        cbid, token, "", context_folder, venv_path
-    )
-    
+    program = _create_sanity_check_script(cbid, token, "", context_folder, venv_path)
+
     sbatch_file = Path(f"./sbatch/sanity-check-{cbid}.sbatch").resolve()
     with open(sbatch_file, "w") as fl:
         click.echo(f"==> Generating an sbatch script, saving it to {sbatch_file}")
@@ -361,12 +383,67 @@ def check(
         click.echo(program)
         click.echo("-------END OF SBATCH-------")
         fl.write(program)
-    
+
     if dry_run:
         click.echo("Dry run mode: Script created but not submitted")
     else:
         click.echo(f"==> Submitting the SBATCH script")
         subprocess.run(["sbatch", f"{sbatch_file.as_posix()}"], check=True)
+
+
+@cli.command()
+@click.option(
+    "-b",
+    "--block-number",
+    required=True,
+    multiple=True,
+    type=str,
+    help="Block number(s) to verify. Can be specified multiple times.",
+)
+@click.option(
+    "--context-folder",
+    type=click.Path(exists=True, resolve_path=True, path_type=Path),
+    default="/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw",
+    show_default=True,
+    help="Context folder containing block directories.",
+)
+def verify(block_number, context_folder):
+    """Verify existent and disk usage of data blocks."""
+    click.echo(f"Verifying {len(block_number)} block(s) in {context_folder}")
+    summary = []
+    for bn in block_number:
+        block_dir = context_folder / bn
+        if block_dir.exists() and block_dir.is_dir():
+            # Get disk usage in GB
+            try:
+                du_proc = subprocess.run(
+                    ["du", "-sBG", str(block_dir)],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                du_out = du_proc.stdout.strip().split()[0]
+                # Remove trailing 'G' and convert to int
+                size_gb = int(du_out.rstrip("G"))
+            except Exception as e:
+                size_gb = "ERR"
+                click.echo(f"  [!] Error getting disk usage for {block_dir}: {e}")
+            if size_gb == 0:
+                click.echo(
+                    f"  [WARNING] {block_dir} exists but is empty (disk usage: 0 GB)"
+                )
+            else:
+                click.echo(f"  [OK] {block_dir} exists, disk usage: {size_gb} GB")
+            summary.append((bn, True, size_gb))
+        else:
+            click.echo(f"  [MISSING] {block_dir} does not exist.")
+            summary.append((bn, False, 0))
+    # Print summary
+    click.echo("\nSummary Report:")
+    click.echo("Block Number | Exists | Disk Usage (GB)")
+    click.echo("-------------|--------|----------------")
+    for bn, exists, size_gb in summary:
+        click.echo(f"{bn:<12} | {'YES' if exists else 'NO ':<6} | {size_gb}")
 
 
 if __name__ == "__main__":
