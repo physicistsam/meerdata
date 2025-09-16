@@ -43,7 +43,7 @@ Any other Python environment with modules listed in the `requirements.txt` can a
 ## Usage
 
 
-The `meerdata.py` script provides three main commands:
+The `meerdata.py` script provides four main commands:
 
 
 ### Pull Command - Download Data
@@ -78,6 +78,42 @@ python meerdata.py pull -r "RDB_LINK" --data-folder /path/to/custom/folder
 ```
 
 Note that we keep the data folders organised on ilifu. There should be no need to change --data-folder option if you are downloading the lastest campaign (XLP).
+
+
+### Extract Command - Process Local Data
+
+Extract auto or cross-correlation data from local RDB files that have already been downloaded.
+
+```bash
+python meerdata.py extract --rdb-file "PATH_TO_LOCAL_RDB"
+```
+
+**Options:**
+
+* `--rdb-file`: Path to local RDB file on disk (required)
+* `-c, --correlation`: Type of data to extract (default: auto)
+  * `auto`: autocorrelations only, i.e. single dish IM data
+  * `cross`: cross-correlations (measurement set), i.e. OTF data
+  * `all`: both autocorrelations and cross-correlations
+* `--data-folder`: Directory for storing extracted data (default: `/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`)
+
+**Examples:**
+
+```bash
+# Extract autocorrelations from local RDB file (default)
+python meerdata.py extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb
+
+# Extract cross-correlations only
+python meerdata.py extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb -c cross
+
+# Extract both auto and cross correlations
+python meerdata.py extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb -c all
+
+# Specify custom data folder
+python meerdata.py extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb --data-folder /path/to/custom/folder
+```
+
+This command is useful when you have already downloaded the full MVF data locally and want to extract specific correlation types without re-downloading from the archive.
 
 
 ### Check Command - Run Sanity Checks
@@ -139,6 +175,15 @@ For each block number, this command will:
    * Extracting measurement set for cross-correlations (if requested)
    * Cleaning up the MVF files after extraction
 
+### Extract Command
+
+1. Infers CBID from the local RDB file name
+2. Creates necessary output directories
+3. Generates and submits SLURM jobs for:
+   * Extracting autocorrelations from local MVF data (if requested)
+   * Extracting measurement set for cross-correlations (if requested)
+   * Cleaning up temporary files after extraction
+
 ### Check Command
 
 1. Extracts CBID and token from the RDB link
@@ -163,5 +208,7 @@ For detailed help on any command:
 ```bash
 python meerdata.py --help
 python meerdata.py pull --help
+python meerdata.py extract --help
 python meerdata.py check --help
+python meerdata.py verify --help
 ```
