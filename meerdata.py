@@ -22,6 +22,19 @@ data_folder_option = click.option(
     show_default=True,
     help="Directory for storing the extracted data",
 )
+mail_user_option = click.option(
+    "--mail-user",
+    type=str,
+    default=None,
+    help="Email address to receive SLURM job notifications",
+)
+mail_type_option = click.option(
+    "--mail-type",
+    type=str,
+    default=None,
+    help="Notification types for SLURM jobs (e.g., BEGIN,END,FAIL). "
+    "See https://slurm.schedmd.com/sbatch.html#OPT_mail-type for all choices",
+)
 
 
 def _validate_venv(ctx, param, value):
@@ -69,12 +82,20 @@ def _create_sbatch_script(
     partition="Main",
     additional_directives="",
     script_body="",
+    mail_user=None,
+    mail_type=None,
 ):
     """Create a standardized SLURM sbatch script.
 
     The SBATCH header is mostly fixed although the resource allocation will be adjusted
     based on the passing parameters.
     """
+    mail_directives = ""
+    if mail_user:
+        mail_directives += f"#SBATCH --mail-user={mail_user}\n"
+    if mail_type:
+        mail_directives += f"#SBATCH --mail-type={mail_type}\n"
+    
     return f"""#!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -82,8 +103,7 @@ def _create_sbatch_script(
 #SBATCH --mem={mem}
 #SBATCH --job-name={job_name}-{cbid}
 #SBATCH --output=logs/%x-%j.out
-{additional_directives}
-#SBATCH --partition={partition}
+{additional_directives}{mail_directives}#SBATCH --partition={partition}
 #SBATCH --time={time}
 #SBATCH --account={account}
 
@@ -104,7 +124,7 @@ def _submit_job(script_path, dependency=None):
 
 def _create_data_scripts(
     steps, cbid, dest, full_dest, ms_path, local_rdb, rdb_link=None,
-    token=None, context_folder=None, venv_path=None
+    token=None, context_folder=None, venv_path=None, mail_user=None, mail_type=None
 ):
     """Create sbatch scripts for specified data processing steps.
     
@@ -122,6 +142,8 @@ def _create_data_scripts(
                        (required if 'sanity-check' in steps)
         venv_path: Optional venv path for sanity check
                   (required if 'sanity-check' in steps)
+        mail_user: Optional email address for SLURM notifications
+        mail_type: Optional notification types for SLURM jobs
     """
     scripts = {}
     python_source = "source ./venv/meerdata/bin/activate"
@@ -146,7 +168,8 @@ mvf_download.py --workers=$SLURM_CPUS_PER_TASK "$RDB_LINK" $fulldest \\
     --stats=15m --stats-one-line || /opt/slurm/bin/scontrol requeue $SLURM_JOB_ID"""
 
         scripts["download"] = _create_sbatch_script(
-            "download_MVF", cbid, 8, "16GB", "48:00:00", script_body=download_body
+            "download_MVF", cbid, 8, "16GB", "48:00:00", script_body=download_body,
+            mail_user=mail_user, mail_type=mail_type
         )
 
     # Auto extraction script
@@ -165,7 +188,8 @@ echo $dest
 mvf_copy.py --corrprods=auto --workers=$SLURM_CPUS_PER_TASK $localRDB $dest"""
 
         scripts["auto"] = _create_sbatch_script(
-            "ext_autos", cbid, 30, "50GB", "00:45:00", script_body=auto_body
+            "ext_autos", cbid, 30, "50GB", "00:45:00", script_body=auto_body,
+            mail_user=mail_user, mail_type=mail_type
         )
 
     # MS extraction script
@@ -188,16 +212,17 @@ python mvftoms-OTF-patch.py -o $MS -v -f $localRDB"""
             cbid,
             24,
             "50GB",
-            "02:00:00",
-            additional_directives="#SBATCH --error=logs/%x-%j.err",
+            "06:00:00",
             script_body=ms_body,
+            mail_user=mail_user, mail_type=mail_type
         )
 
     # Cleanup script
     if "cleanup" in steps:
         cleanup_body = f"rm -r {full_dest}"
         scripts["cleanup"] = _create_sbatch_script(
-            "cleanup", cbid, 1, "1GB", "0:30:00", script_body=cleanup_body
+            "cleanup", cbid, 1, "1GB", "0:30:00", script_body=cleanup_body,
+            mail_user=mail_user, mail_type=mail_type
         )
 
     # Sanity check script
@@ -258,6 +283,7 @@ echo "Executing command: {museek_cmd}"
             "00:05:00",
             additional_directives="#SBATCH --requeue",
             script_body=sanity_body,
+            mail_user=mail_user, mail_type=mail_type
         )
 
     return scripts
@@ -369,8 +395,10 @@ def cli():
     "cross (OTF measurement set), all (both)",
 )
 @data_folder_option
+@mail_user_option
+@mail_type_option
 @dry_run_option
-def pull(rdb_link, correlation, data_folder, dry_run):
+def pull(rdb_link, correlation, data_folder, mail_user, mail_type, dry_run):
     """Download a data block."""
     cbid, token = _extract_cbid_and_token_from_rdb_link(rdb_link)
 
@@ -398,7 +426,8 @@ def pull(rdb_link, correlation, data_folder, dry_run):
 
     # Create and submit jobs
     scripts = _create_data_scripts(
-        steps, cbid, dest, full_dest, ms_path, local_rdb, rdb_link
+        steps, cbid, dest, full_dest, ms_path, local_rdb, rdb_link,
+        mail_user=mail_user, mail_type=mail_type
     )
     job_ids = _write_and_submit_data_jobs(scripts, cbid, dry_run)
 
@@ -426,11 +455,15 @@ def pull(rdb_link, correlation, data_folder, dry_run):
     callback=_validate_venv,
     help="Path to the Python virtual environment to use.",
 )
+@mail_user_option
+@mail_type_option
 @dry_run_option
 def check(
     rdb_link,
     context_folder,
     venv_path,
+    mail_user,
+    mail_type,
     dry_run,
 ):
     """Run sanity check on a data block."""
@@ -451,7 +484,8 @@ def check(
     steps = ["sanity-check"]
     scripts = _create_data_scripts(
         steps, cbid, None, None, None, None,
-        token=token, context_folder=context_folder, venv_path=venv_path
+        token=token, context_folder=context_folder, venv_path=venv_path,
+        mail_user=mail_user, mail_type=mail_type
     )
     job_ids = _write_and_submit_data_jobs(scripts, cbid, dry_run)
 
@@ -533,8 +567,10 @@ def verify(block_number, context_folder):
     "cross (OTF measurement set), all (both)",
 )
 @data_folder_option
+@mail_user_option
+@mail_type_option
 @dry_run_option
-def extract(rdb_file, correlation, data_folder, dry_run):
+def extract(rdb_file, correlation, data_folder, mail_user, mail_type, dry_run):
     """Extract auto or cross-correlation from local data."""
     # Infer cbid from file path (assume .../<cbid>_sdp_l0.full.rdb)
     cbid = rdb_file.stem.split("_")[0]
@@ -562,7 +598,10 @@ def extract(rdb_file, correlation, data_folder, dry_run):
     steps.append("cleanup")  # Always cleanup at the end
 
     # Create and submit jobs
-    scripts = _create_data_scripts(steps, cbid, dest, full_dest, ms_path, rdb_file)
+    scripts = _create_data_scripts(
+        steps, cbid, dest, full_dest, ms_path, rdb_file,
+        mail_user=mail_user, mail_type=mail_type
+    )
     job_ids = _write_and_submit_data_jobs(scripts, cbid, dry_run)
 
     if dry_run:
