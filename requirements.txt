@@ -1,6 +1,9 @@
 click
+numpy
 python-casacore
 katdal
-matplotlib
-git+https://github.com/meerklass/ivory.git
-git+https://github.com/meerklass/museek.git
+katpoint
+numba
+katdal
+git+https://github.com/meerklass/ivory.git@060b54c5a9e3ef00597d01534ca506832b1288ac#egg=ivory
+git+https://github.com/meerklass/museek@v0.3.0
