@@ -2,6 +2,7 @@
 from pathlib import Path
 import click
 import subprocess
+import os
 
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 100}
@@ -194,6 +195,9 @@ mvf_copy.py --corrprods=auto --workers=$SLURM_CPUS_PER_TASK $localRDB $dest"""
 
     # MS extraction script
     if "ms" in steps:
+        # Get the absolute path to mvftoms_otf_patch.py
+        mvftoms_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mvftoms_otf_patch.py")
+        
         ms_body = f"""export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 {python_source}
@@ -201,11 +205,11 @@ mvf_copy.py --corrprods=auto --workers=$SLURM_CPUS_PER_TASK $localRDB $dest"""
 localRDB={local_rdb}
 MS={ms_path}
 
-echo running mvftoms
+echo running mvftoms-OTF-patch.py
 echo $localRDB
 echo $MS
 
-python mvftoms-OTF-patch.py -o $MS -v -f $localRDB"""
+python {mvftoms_script} -o $MS -v -f $localRDB"""
 
         scripts["ms"] = _create_sbatch_script(
             "ext_MS",
