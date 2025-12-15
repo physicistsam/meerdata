@@ -9,47 +9,55 @@ A make up word from Afrikaans word "meer" meaning "more" and an English word dat
 
 ## Requirements
 
-* Access to [SARAO archive](https://archive.sarao.ac.za/)
+* Access to [SARAO archive](https://archive.sarao.ac.za/). See [Obataining RDB Link.](#obtaining-rdb-link)
 * Access to ilifu although this tool can technically be run on any cluster with a SLURM job scheduler
 * Python >= 3.6
-* katdal and other dependencies (installed via `setup.sh`)
+* katdal, museek and other dependencies (installed automatically when installing this package via `pip`)
 
-## Set Up
+## Installation
 
-1. Clone this repository
-2. On illifu, start an interactive shell session: `sinteractive`
-3. Run the setup script: `bash setup.sh`
-   * This creates a Python virtual environment in `./venv/meerdata/`
-   * Installs all required dependencies including katdal, ivory and museek
-   * Creates a `logs/` directory for SLURM output files
-4. You can then close the interactive shell
+### Option 1: Pre-installed environment on ilifu
 
-## Obtaining RDB link
+No installation required! Simply activate MeerKLASS shared Python virtual environment.
 
-To access recent MeerKLASS data, you will need a permission from our PI.
-
-A link to the raw `.rdb` file containing the metadata of the data block is required to run sanity check or download it. The RDB link can be obtained by clicking on "COPY RDB LINK" (now ".RDB FILE LINK" after their recent update) on the top right corner.
-![SARAO Archive interface showing RDB link ](https://archive.sarao.ac.za/block-annotated.webp)
-
-## Activate Python environment
-
-To use this tool, activate the meerdata Python environment installed by the `setup.sh` script.
-```bash
-source venv/meerdata/bin/activate
+```
+source /idia/projects/meerklass/virtualenv/meerklass/bin/activate
 ```
 
-Any other Python environment with modules listed in the `requirements.txt` can also be used.
+Contact @piyanatk if there is any issue with the shared environment
+
+### Option 2: Install as Python Package
+
+This is useful for installing the package in development mode:
+
+```bash
+# Clone the repository
+git clone https://github.com/meerklass/meerdata.git
+cd meerdata
+
+# Install in development mode
+pip install -e .
+
+# Or install normally
+pip install .
+```
 
 ## Usage
 
+After installation, the `meerdata` tool will be available:
 
-The `meerdata.py` script provides four main commands:
+```bash
+meerdata --help
+```
+
+The tool provides four main commands: `pull`, `extract`, `check`, and `verify`.
 
 
 ### Pull Command - Download Data
 
 ```bash
-python meerdata.py pull -r "RDB_LINK"
+meerdata pull -r "RDB_LINK"
+# or: python meerdata.py pull -r "RDB_LINK"
 ```
 
 **Options:**
@@ -65,16 +73,16 @@ python meerdata.py pull -r "RDB_LINK"
 
 ```bash
 # Download autocorrelations only (default)
-python meerdata.py pull -r "https://archive-gw-1.kat.ac.za/1234567890/1234567890_sdp_l0.full.rdb?token=abc123"
+meerdata pull -r "https://archive-gw-1.kat.ac.za/1234567890/1234567890_sdp_l0.full.rdb?token=abc123"
 
 # Download cross-correlations only
-python meerdata.py pull -r "RDB_LINK" -c cross
+meerdata pull -r "RDB_LINK" -c cross
 
 # Download both auto and cross correlations
-python meerdata.py pull -r "RDB_LINK" -c all
+meerdata pull -r "RDB_LINK" -c all
 
 # Specify custom data folder
-python meerdata.py pull -r "RDB_LINK" --data-folder /path/to/custom/folder
+meerdata pull -r "RDB_LINK" --data-folder /path/to/custom/folder
 ```
 
 Note that we keep the data folders organised on ilifu. There should be no need to change --data-folder option if you are downloading the lastest campaign (XLP).
@@ -85,7 +93,7 @@ Note that we keep the data folders organised on ilifu. There should be no need t
 Extract auto or cross-correlation data from local RDB files that have already been downloaded.
 
 ```bash
-python meerdata.py extract --rdb-file "PATH_TO_LOCAL_RDB"
+meerdata extract --rdb-file "PATH_TO_LOCAL_RDB"
 ```
 
 **Options:**
@@ -101,16 +109,16 @@ python meerdata.py extract --rdb-file "PATH_TO_LOCAL_RDB"
 
 ```bash
 # Extract autocorrelations from local RDB file (default)
-python meerdata.py extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb
+meerdata extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb
 
 # Extract cross-correlations only
-python meerdata.py extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb -c cross
+meerdata extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb -c cross
 
 # Extract both auto and cross correlations
-python meerdata.py extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb -c all
+meerdata extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb -c all
 
 # Specify custom data folder
-python meerdata.py extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb --data-folder /path/to/custom/folder
+meerdata extract --rdb-file /path/to/1234567890_sdp_l0.full.rdb --data-folder /path/to/custom/folder
 ```
 
 This command is useful when you have already downloaded the full MVF data locally and want to extract specific correlation types without re-downloading from the archive.
@@ -119,7 +127,7 @@ This command is useful when you have already downloaded the full MVF data locall
 ### Check Command - Run Sanity Checks
 
 ```bash
-python meerdata.py check -r "RDB_LINK"
+meerdata check -r "RDB_LINK"
 ```
 
 **Options:**
@@ -131,7 +139,7 @@ python meerdata.py check -r "RDB_LINK"
 **Example:**
 
 ```bash
-python meerdata.py check -r "https://archive-gw-1.kat.ac.za/1234567890/1234567890_sdp_l0.full.rdb?token=abc123"
+meerdata check -r "https://archive-gw-1.kat.ac.za/1234567890/1234567890_sdp_l0.full.rdb?token=abc123"
 ```
 
 The sanity check should take about 5 minutes to run. Otherwise, there is likely a networking issue, which can happen from time to time. Simply resubmit the job on the same block.
@@ -141,7 +149,7 @@ Once ran, the "formatted output" should be copy to the MeerKLASS data tracking s
 ### Verify Command - Check Disk Usage and Existent of Data Blocks
 
 ```bash
-python meerdata.py verify -b BLOCK_NUMBER [ -b BLOCK_NUMBER ... ]
+meerdata verify -b BLOCK_NUMBER [ -b BLOCK_NUMBER ... ]
 ```
 
 **Options:**
@@ -152,7 +160,7 @@ python meerdata.py verify -b BLOCK_NUMBER [ -b BLOCK_NUMBER ... ]
 **Example:**
 
 ```bash
-python meerdata.py verify -b 1753129121 -b 1753219043 -b 1753297658
+meerdata verify -b 1753129121 -b 1753219043 -b 1753297658
 ```
 
 For each block number, this command will:
@@ -162,6 +170,14 @@ For each block number, this command will:
 * If the directory exists but is empty (0 GB), print a `[WARNING]`
 * If the directory does not exist, print `[MISSING]`
 * Print a summary table at the end
+
+
+## Obtaining RDB link
+
+To access recent MeerKLASS data, you will need a permission from our PI.
+
+A link to the raw `.rdb` file containing the metadata of the data block is required to run sanity check or download it. The RDB link can be obtained by clicking on "COPY RDB LINK" (now ".RDB FILE LINK" after their recent update) on the top right corner.
+![SARAO Archive interface showing RDB link ](https://archive.sarao.ac.za/block-annotated.webp)
 
 ## How It Works
 
@@ -201,14 +217,29 @@ For each block number, this command will:
 
 All SLURM output logs are saved in the `logs/` directory with descriptive filenames.
 
+## Email Notifications
+
+All commands support SLURM email notifications:
+
+* `--mail-user`: Email address to receive notifications
+* `--mail-type`: When to send emails (e.g., `BEGIN`, `END`, `FAIL`, `ALL`)
+
+**Example:**
+
+```bash
+meerdata pull -r "RDB_LINK" --mail-user user@example.com --mail-type ALL
+```
+
+See [SLURM sbatch documentation](https://slurm.schedmd.com/sbatch.html) for more mail type options.
+
 ## Help
 
 For detailed help on any command:
 
 ```bash
-python meerdata.py --help
-python meerdata.py pull --help
-python meerdata.py extract --help
-python meerdata.py check --help
-python meerdata.py verify --help
+meerdata --help
+meerdata pull --help
+meerdata extract --help
+meerdata check --help
+meerdata verify --help
 ```
