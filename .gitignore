@@ -3,3 +3,5 @@ logs/
 sbatch/
 venv/
 *.sbatch
+build/
+*.egg-info/
