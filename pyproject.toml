@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meerdata"
+version = "0.1.0"
+description = "MeerKLASS data management tool for downloading and processing telescope data"
+readme = "README.md"
+requires-python = ">=3.6"
+license = {text = "MIT"}
+authors = [
+    {name = "MeerKLASS Team"}
+]
+keywords = ["meerklass", "sarao", "data-management", "astronomy"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = [
+    "click>=7.0",
+    "numpy",
+    "python-casacore",
+    "katdal",
+    "katpoint",
+    "numba",
+    "museek @ git+https://github.com/meerklass/museek.git@v0.3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/meerklass/meerdata"
+Documentation = "https://github.com/meerklass/meerdata/blob/main/README.md"
+Repository = "https://github.com/meerklass/meerdata"
+"Bug Tracker" = "https://github.com/meerklass/meerdata/issues"
+
+[project.scripts]
+meerdata = "meerdata.cli:cli"
+mvftoms-OTF-patch = "meerdata.mvftoms_otf_patch:main"
+
+[tool.setuptools]
+packages = ["meerdata"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+meerdata = ["*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
