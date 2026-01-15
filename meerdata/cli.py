@@ -6,7 +6,14 @@ import os
 
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 100}
-
+PATH_DW = click.Path(
+    exists=True,
+    resolve_path=True,
+    writable=True,
+    file_okay=False,
+    dir_okay=True,
+    path_type=Path,
+)
 
 rdb_link_option = click.option(
     "-r", "--rdb-link", required=True, help="SARAO Archive RDB file link (full url)."
@@ -18,7 +25,7 @@ dry_run_option = click.option(
 )
 data_folder_option = click.option(
     "--data-folder",
-    type=click.Path(exists=True, resolve_path=True, path_type=Path),
+    type=PATH_DW,
     default="/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw",
     show_default=True,
     help="Directory for storing the extracted data",
@@ -39,9 +46,7 @@ mail_type_option = click.option(
 
 
 def _validate_venv(ctx, param, value):
-    def_err = (
-        "You can execute the `setup.sh` bash script in the repository to set one up."
-    )
+    def_err = "See README.md for installation instruction."
     if not value.exists():
         raise FileNotFoundError(
             f"Python virtual environment directory {value} does not exists. {def_err}"
@@ -96,7 +101,7 @@ def _create_sbatch_script(
         mail_directives += f"#SBATCH --mail-user={mail_user}\n"
     if mail_type:
         mail_directives += f"#SBATCH --mail-type={mail_type}\n"
-    
+
     return f"""#!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -124,11 +129,21 @@ def _submit_job(script_path, dependency=None):
 
 
 def _create_data_scripts(
-    steps, cbid, dest, full_dest, ms_path, local_rdb, rdb_link=None,
-    token=None, context_folder=None, venv_path=None, mail_user=None, mail_type=None
+    steps,
+    cbid,
+    dest,
+    full_dest,
+    ms_path,
+    local_rdb,
+    rdb_link=None,
+    token=None,
+    context_folder=None,
+    venv_path=None,
+    mail_user=None,
+    mail_type=None,
 ):
     """Create sbatch scripts for specified data processing steps.
-    
+
     Args:
         steps: List of steps to create scripts for
                ('download', 'auto', 'ms', 'cleanup', 'sanity-check')
@@ -153,7 +168,7 @@ def _create_data_scripts(
     if "download" in steps:
         if not rdb_link:
             raise ValueError("rdb_link is required when 'download' step is included")
-        
+
         download_body = f"""{python_source}
 module load rclone
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
@@ -169,8 +184,14 @@ mvf_download.py --workers=$SLURM_CPUS_PER_TASK "$RDB_LINK" $fulldest \\
     --stats=15m --stats-one-line || /opt/slurm/bin/scontrol requeue $SLURM_JOB_ID"""
 
         scripts["download"] = _create_sbatch_script(
-            "download_MVF", cbid, 8, "16GB", "48:00:00", script_body=download_body,
-            mail_user=mail_user, mail_type=mail_type
+            "download_MVF",
+            cbid,
+            8,
+            "16GB",
+            "48:00:00",
+            script_body=download_body,
+            mail_user=mail_user,
+            mail_type=mail_type,
         )
 
     # Auto extraction script
@@ -189,15 +210,21 @@ echo $dest
 mvf_copy.py --corrprods=auto --workers=$SLURM_CPUS_PER_TASK $localRDB $dest"""
 
         scripts["auto"] = _create_sbatch_script(
-            "ext_autos", cbid, 30, "50GB", "00:45:00", script_body=auto_body,
-            mail_user=mail_user, mail_type=mail_type
+            "ext_autos",
+            cbid,
+            30,
+            "50GB",
+            "00:45:00",
+            script_body=auto_body,
+            mail_user=mail_user,
+            mail_type=mail_type,
         )
 
     # MS extraction script
     if "ms" in steps:
-        # Get the absolute path to mvftoms_otf_patch.py
-        mvftoms_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mvftoms_otf_patch.py")
-        
+        # mvftoms_otf_patch.py is insalled as path of meerdata
+        mvftoms_script = "mvftoms_otf_patch.py"
+
         ms_body = f"""export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 {python_source}
@@ -205,7 +232,7 @@ mvf_copy.py --corrprods=auto --workers=$SLURM_CPUS_PER_TASK $localRDB $dest"""
 localRDB={local_rdb}
 MS={ms_path}
 
-echo running mvftoms-OTF-patch.py
+echo running {mvftoms_script}
 echo $localRDB
 echo $MS
 
@@ -218,15 +245,22 @@ python {mvftoms_script} -o $MS -v -f $localRDB"""
             "50GB",
             "06:00:00",
             script_body=ms_body,
-            mail_user=mail_user, mail_type=mail_type
+            mail_user=mail_user,
+            mail_type=mail_type,
         )
 
     # Cleanup script
     if "cleanup" in steps:
         cleanup_body = f"rm -r {full_dest}"
         scripts["cleanup"] = _create_sbatch_script(
-            "cleanup", cbid, 1, "1GB", "0:30:00", script_body=cleanup_body,
-            mail_user=mail_user, mail_type=mail_type
+            "cleanup",
+            cbid,
+            1,
+            "1GB",
+            "0:30:00",
+            script_body=cleanup_body,
+            mail_user=mail_user,
+            mail_type=mail_type,
         )
 
     # Sanity check script
@@ -236,10 +270,11 @@ python {mvftoms_script} -o $MS -v -f $localRDB"""
                 "token, context_folder, and venv_path are required when "
                 "'sanity-check' step is included"
             )
-        
+
         # Set up museek command line
         data_folder_arg = (
-            "--InPlugin-data-folder=" if dest is None
+            "--InPlugin-data-folder="
+            if dest is None
             else f"--InPlugin-data-folder={dest}"
         )
         museek_cmd = " ".join(
@@ -287,7 +322,8 @@ echo "Executing command: {museek_cmd}"
             "00:05:00",
             additional_directives="#SBATCH --requeue",
             script_body=sanity_body,
-            mail_user=mail_user, mail_type=mail_type
+            mail_user=mail_user,
+            mail_type=mail_type,
         )
 
     return scripts
@@ -295,7 +331,7 @@ echo "Executing command: {museek_cmd}"
 
 def _write_and_submit_data_jobs(scripts, cbid, dry_run=False):
     """Write sbatch scripts and submit jobs with proper dependencies.
-    
+
     Args:
         scripts: Dictionary of script types and their content
                 (only contains requested steps)
@@ -318,7 +354,7 @@ def _write_and_submit_data_jobs(scripts, cbid, dry_run=False):
             filename = f"sanity-check-{cbid}.sbatch"
         else:  # cleanup
             filename = f"{script_type}-{cbid}.sbatch"
-            
+
         script_files[script_type] = sbatch_dir / filename
         with open(script_files[script_type], "w") as f:
             f.write(content)
@@ -371,7 +407,7 @@ def _write_and_submit_data_jobs(scripts, cbid, dry_run=False):
             # No extraction jobs, cleanup depends on download or runs immediately
             cleanup_dependency = f"afterok:{download_id}" if download_id else None
             cleanup_id = _submit_job(script_files["cleanup"], cleanup_dependency)
-        
+
         job_ids.append(cleanup_id)
         click.echo(f"Submitted cleanup job: {cleanup_id}")
 
@@ -430,8 +466,15 @@ def pull(rdb_link, correlation, data_folder, mail_user, mail_type, dry_run):
 
     # Create and submit jobs
     scripts = _create_data_scripts(
-        steps, cbid, dest, full_dest, ms_path, local_rdb, rdb_link,
-        mail_user=mail_user, mail_type=mail_type
+        steps,
+        cbid,
+        dest,
+        full_dest,
+        ms_path,
+        local_rdb,
+        rdb_link,
+        mail_user=mail_user,
+        mail_type=mail_type,
     )
     job_ids = _write_and_submit_data_jobs(scripts, cbid, dry_run)
 
@@ -446,7 +489,7 @@ def pull(rdb_link, correlation, data_folder, mail_user, mail_type, dry_run):
 @click.option(
     "--context-folder",
     required=True,
-    type=click.Path(exists=True, resolve_path=True, path_type=Path),
+    type=PATH_DW,
     default="/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/sanity_checks",
     show_default=True,
     help="Context folder to save sanity check results.",
@@ -454,7 +497,7 @@ def pull(rdb_link, correlation, data_folder, mail_user, mail_type, dry_run):
 @click.option(
     "--venv-path",
     type=click.Path(exists=False, resolve_path=True, path_type=Path),
-    default="./venv/meerdata",
+    default="/idia/projects/meerklass/virtualenv/meerdata",
     show_default=True,
     callback=_validate_venv,
     help="Path to the Python virtual environment to use.",
@@ -487,9 +530,17 @@ def check(
     # Create and submit the sanity check job
     steps = ["sanity-check"]
     scripts = _create_data_scripts(
-        steps, cbid, None, None, None, None,
-        token=token, context_folder=context_folder, venv_path=venv_path,
-        mail_user=mail_user, mail_type=mail_type
+        steps,
+        cbid,
+        None,
+        None,
+        None,
+        None,
+        token=token,
+        context_folder=context_folder,
+        venv_path=venv_path,
+        mail_user=mail_user,
+        mail_type=mail_type,
     )
     job_ids = _write_and_submit_data_jobs(scripts, cbid, dry_run)
 
@@ -603,8 +654,14 @@ def extract(rdb_file, correlation, data_folder, mail_user, mail_type, dry_run):
 
     # Create and submit jobs
     scripts = _create_data_scripts(
-        steps, cbid, dest, full_dest, ms_path, rdb_file,
-        mail_user=mail_user, mail_type=mail_type
+        steps,
+        cbid,
+        dest,
+        full_dest,
+        ms_path,
+        rdb_file,
+        mail_user=mail_user,
+        mail_type=mail_type,
     )
     job_ids = _write_and_submit_data_jobs(scripts, cbid, dry_run)
 
