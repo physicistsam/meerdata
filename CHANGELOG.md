@@ -5,24 +5,22 @@ All notable changes to the MeerKLASS Data Management Tool will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2025-12-15
+## [1.0.0] - 2025-12-15
 
 ### Added
 - Converted repository to installable Python package with `pyproject.toml`
 - Package can now be installed with `pip install -e .` or `pip install .`
 - Added `meerdata` command as package entry point (alternative to `python meerdata.py`)
-- Added `mvftoms` command as package entry point for MVF to MS conversion
+- Also install `mvftoms_otf_patch.py` as a command
 - Email notification support via `--mail-user` and `--mail-type` options for all commands
 - Documentation for email notifications in README
 
 ### Changed
 - Reorganized code structure:
   - `meerdata.py` → `meerdata/cli.py` (main CLI implementation)
-  - `mvftoms-OTF-patch.py` → `meerdata/mvftoms.py` (MVF to MS conversion)
+  - `mvftoms-OTF-patch.py` → `meerdata/mvftoms_otf_patch.py` (MVF to MS conversion)
   - Added `meerdata/__init__.py` (package initialization)
-  - Added `meerdata/__main__.py` (entry point for `python -m meerdata`)
 - Updated README with installation instructions
-- Commands now call `mvftoms` instead of `python mvftoms-OTF-patch.py`
 
 ### Technical Improvements
 - Unified step-based architecture for pull/extract/check commands
@@ -30,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standardized SLURM script generation with `_create_sbatch_script()`
 - Consolidated job submission logic with `_write_and_submit_data_jobs()`
 
-## [Pre-0.1.0] - Historical Development
+## [Pre-1.0.0] - Historical Development
 
 ### Features
 - `pull` command: Download data from SARAO archive
