@@ -11,14 +11,14 @@ A make up word from Afrikaans word "meer" meaning "more" and an English word dat
 
 * Access to [SARAO archive](https://archive.sarao.ac.za/). See [Obataining RDB Link.](#obtaining-rdb-link)
 * Access to ilifu although this tool can technically be run on any cluster with a SLURM job scheduler
-* Python >= 3.6
-* katdal, museek and other dependencies (installed automatically when installing this package via `pip`)
+* Python >= 3.12
+* `pip` (katdal, museek and other dependencies are installed automatically when installing this package with `pip`)
 
 ## Installation
 
 ### Option 1: Pre-installed environment on ilifu
 
-No installation required! Simply activate MeerKLASS shared Python virtual environment.
+No installation required! Simply activate meerklass shared Python virtual environment.
 
 ```
 source /idia/projects/meerklass/virtualenv/meerklass/bin/activate
@@ -26,7 +26,13 @@ source /idia/projects/meerklass/virtualenv/meerklass/bin/activate
 
 Contact @piyanatk if there is any issue with the shared environment
 
-### Option 2: Install as Python Package
+### Option 2: Install from GitHub
+
+```
+pip install git+https://github.com/meerklass/meerdata.git
+```
+
+### Option 2: Manual Installation
 
 This is useful for installing the package in development mode:
 
@@ -37,14 +43,11 @@ cd meerdata
 
 # Install in development mode
 pip install -e .
-
-# Or install normally
-pip install .
 ```
 
 ## Usage
 
-After installation, the `meerdata` tool will be available:
+After installation, the `meerdata` command will be available:
 
 ```bash
 meerdata --help
@@ -186,9 +189,9 @@ A link to the raw `.rdb` file containing the metadata of the data block is requi
 1. Extracts CBID (block number) and token from the RDB link
 2. Creates necessary directories
 3. Generate and submits SLURM jobs for:
-   * Downloading MVF data from SARAO archive
-   * Extracting autocorrelations (if requested)
-   * Extracting measurement set for cross-correlations (if requested)
+   * Downloading MVF data from SARAO archive using `mvf_download.py` script from `katdal`
+   * Extracting autocorrelations (if requested) using `mvf_copy.py` script from `katdal`
+   * Extracting measurement set for cross-correlations (if requested) using `mvftoms_otf_patch.py`, which is our patch version of the `mvftoms.py` from katdal
    * Cleaning up the MVF files after extraction
 
 ### Extract Command
