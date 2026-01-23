@@ -71,6 +71,8 @@ meerdata pull -r "RDB_LINK"
   * `cross`: cross-correlations (measurement set), i.e. OTF data
   * `all`: both autocorrelations and cross-correlations
 * `--data-folder`: Directory for storing data (default: `/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`)
+* `--venv`: Path to Python virtual environment to use (default: `/idia/projects/meerklass/virtualenv/meerklass`). The specified venv will be activated in generated sbatch scripts via `source {venv}/bin/activate`.
+* `--no-cleanup`: Skip the full raw data cleanup step at the end (useful for debugging or preserving raw files).
 
 **Examples:**
 
@@ -86,6 +88,12 @@ meerdata pull -r "RDB_LINK" -c all
 
 # Specify custom data folder
 meerdata pull -r "RDB_LINK" --data-folder /path/to/custom/folder
+
+# Skip the final cleanup step (keep raw files)
+meerdata pull -r "RDB_LINK" --no-cleanup
+
+# Use a specific Python virtual environment for job scripts
+meerdata pull -r "RDB_LINK" --venv /path/to/venv
 ```
 
 Note that we keep the data folders organised on ilifu. There should be no need to change --data-folder option if you are downloading the lastest campaign (XLP).
@@ -107,6 +115,7 @@ meerdata extract --rdb-file "PATH_TO_LOCAL_RDB"
   * `cross`: cross-correlations (measurement set), i.e. OTF data
   * `all`: both autocorrelations and cross-correlations
 * `--data-folder`: Directory for storing extracted data (default: `/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`)
+* `--venv`: Path to Python virtual environment to use (default: `/idia/projects/meerklass/virtualenv/meerklass`). The specified venv will be activated in generated sbatch scripts via `source {venv}/bin/activate`.
 
 **Examples:**
 
@@ -137,7 +146,7 @@ meerdata check -r "RDB_LINK"
 
 * `-r, --rdb-link`: SARAO Archive RDB file link (required)
 * `--context-folder`: Directory to save sanity check results (default: `/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/sanity_checks`)
-* `--venv-path`: Path to Python virtual environment (default: `./venv/meerdata`)
+* `--venv`: Path to Python virtual environment (default: `/idia/projects/meerklass/virtualenv/meerklass`). The specified venv will be validated and activated in the generated sbatch script via `source {venv}/bin/activate`.
 
 **Example:**
 
@@ -192,7 +201,7 @@ A link to the raw `.rdb` file containing the metadata of the data block is requi
    * Downloading MVF data from SARAO archive using `mvf_download.py` script from `katdal`
    * Extracting autocorrelations (if requested) using `mvf_copy.py` script from `katdal`
    * Extracting measurement set for cross-correlations (if requested) using `mvftoms_otf_patch.py`, which is our patch version of the `mvftoms.py` from katdal
-   * Cleaning up the MVF files after extraction
+   * Cleaning up the MVF files after extraction. This cleanup step can be skipped by passing `--no-cleanup` to `pull` (useful for debugging or preserving raw data)
 
 ### Extract Command
 

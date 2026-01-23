@@ -5,6 +5,14 @@ All notable changes to the MeerKLASS Data Management Tool will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-01-23
+
+### Added
+- `--no-cleanup` option to `pull` to skip the full raw data cleanup step at the end.
+- Standardized `--venv` option (default: `/idia/projects/meerklass/virtualenv/meerklass`) for `pull`, `extract`, and `check`. The specified venv is activated in generated sbatch scripts via `source {venv}/bin/activate`.
+- Validation for provided `--venv` paths (checks that directory exists and contains `bin/activate`).
+- Tests for `--venv` behavior and `--no-cleanup` option.
+
 ## [1.0.0] - 2025-12-15
 
 ### Added
