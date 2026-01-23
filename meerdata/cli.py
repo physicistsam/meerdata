@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-from pathlib import Path
-import click
 import subprocess
-import os
+from pathlib import Path
 
+import click
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 100}
 PATH_DW = click.Path(
@@ -42,6 +41,17 @@ mail_type_option = click.option(
     default=None,
     help="Notification types for SLURM jobs (e.g., BEGIN,END,FAIL). "
     "See https://slurm.schedmd.com/sbatch.html#OPT_mail-type for all choices",
+)
+
+use_patched_mvftoms_option = click.option(
+    "--use-patched-mvftoms",
+    is_flag=True,
+    default=False,
+    help=(
+        "Use the patched mvftoms_otf_patch.py instead of the default "
+        "katdal-provided mvftoms.py. WARNING: this patched version is deprecated "
+        "and will be removed in the next release."
+    ),
 )
 
 
@@ -139,6 +149,7 @@ def _create_data_scripts(
     token=None,
     context_folder=None,
     venv_path=None,
+    use_patched_mvftoms=False,
     mail_user=None,
     mail_type=None,
 ):
@@ -158,6 +169,9 @@ def _create_data_scripts(
                        (required if 'sanity-check' in steps)
         venv_path: Optional venv path for sanity check
                   (required if 'sanity-check' in steps)
+        use_patched_mvftoms: Use the patched mvftoms_otf_patch.py instead of the
+                             default katdal-provided mvftoms.py. When True a
+                             deprecation warning will be emitted.
         mail_user: Optional email address for SLURM notifications
         mail_type: Optional notification types for SLURM jobs
     """
@@ -222,8 +236,17 @@ mvf_copy.py --corrprods=auto --workers=$SLURM_CPUS_PER_TASK $localRDB $dest"""
 
     # MS extraction script
     if "ms" in steps:
-        # mvftoms_otf_patch.py is insalled as path of meerdata
-        mvftoms_script = "mvftoms_otf_patch.py"
+        # Use the katdal-provided mvftoms.py by default; use the patched version only
+        # when explicitly requested via `use_patched_mvftoms`.
+        mvftoms_script = "mvftoms.py"
+        ms_warning = ""
+        if use_patched_mvftoms:
+            mvftoms_script = "mvftoms_otf_patch.py"
+            ms_warning = (
+                'echo "WARNING: Using patched mvftoms_otf_patch.py; this '
+                "patched version is deprecated and will be "
+                'removed in the next release."\n'
+            )
 
         ms_body = f"""export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
@@ -232,7 +255,7 @@ mvf_copy.py --corrprods=auto --workers=$SLURM_CPUS_PER_TASK $localRDB $dest"""
 localRDB={local_rdb}
 MS={ms_path}
 
-echo running {mvftoms_script}
+{ms_warning}echo running {mvftoms_script}
 echo $localRDB
 echo $MS
 
@@ -438,7 +461,22 @@ def cli():
 @mail_user_option
 @mail_type_option
 @dry_run_option
-def pull(rdb_link, correlation, data_folder, mail_user, mail_type, dry_run):
+@use_patched_mvftoms_option
+@click.option(
+    "--no-cleanup",
+    is_flag=True,
+    help="Skip the full raw data cleanup step at the end",
+)
+def pull(
+    rdb_link,
+    correlation,
+    data_folder,
+    mail_user,
+    mail_type,
+    dry_run,
+    use_patched_mvftoms,
+    no_cleanup,
+):
     """Download a data block."""
     cbid, token = _extract_cbid_and_token_from_rdb_link(rdb_link)
 
@@ -453,6 +491,11 @@ def pull(rdb_link, correlation, data_folder, mail_user, mail_type, dry_run):
     dest.mkdir(parents=True, exist_ok=True)
     full_dest.mkdir(parents=True, exist_ok=True)
 
+    if use_patched_mvftoms:
+        click.echo(
+            "WARNING: Using patched mvftoms_otf_patch.py; this patched version is deprecated and will be removed in the next release."
+        )
+
     click.echo(f"Pulling {correlation} correlation data for CBID: {cbid}")
     click.echo(f"Destination: {dest}")
 
@@ -462,7 +505,8 @@ def pull(rdb_link, correlation, data_folder, mail_user, mail_type, dry_run):
         steps.append("auto")
     if correlation in ["cross", "all"]:
         steps.append("ms")
-    steps.append("cleanup")  # Always cleanup at the end
+    if not no_cleanup:
+        steps.append("cleanup")  # Cleanup at the end unless --no-cleanup is specified
 
     # Create and submit jobs
     scripts = _create_data_scripts(
@@ -473,6 +517,7 @@ def pull(rdb_link, correlation, data_folder, mail_user, mail_type, dry_run):
         ms_path,
         local_rdb,
         rdb_link,
+        use_patched_mvftoms=use_patched_mvftoms,
         mail_user=mail_user,
         mail_type=mail_type,
     )
@@ -625,7 +670,16 @@ def verify(block_number, context_folder):
 @mail_user_option
 @mail_type_option
 @dry_run_option
-def extract(rdb_file, correlation, data_folder, mail_user, mail_type, dry_run):
+@use_patched_mvftoms_option
+def extract(
+    rdb_file,
+    correlation,
+    data_folder,
+    mail_user,
+    mail_type,
+    dry_run,
+    use_patched_mvftoms,
+):
     """Extract auto or cross-correlation from local data."""
     # Infer cbid from file path (assume .../<cbid>_sdp_l0.full.rdb)
     cbid = rdb_file.stem.split("_")[0]
@@ -639,6 +693,11 @@ def extract(rdb_file, correlation, data_folder, mail_user, mail_type, dry_run):
     Path("./logs").mkdir(parents=True, exist_ok=True)
     Path("./sbatch").mkdir(parents=True, exist_ok=True)
     dest.mkdir(parents=True, exist_ok=True)
+
+    if use_patched_mvftoms:
+        click.echo(
+            "WARNING: Using patched mvftoms_otf_patch.py; this patched version is deprecated and will be removed in the next release."
+        )
 
     click.echo(f"Extracting {correlation} correlation data for CBID: {cbid}")
     click.echo(f"Source RDB: {rdb_file}")
@@ -660,6 +719,7 @@ def extract(rdb_file, correlation, data_folder, mail_user, mail_type, dry_run):
         full_dest,
         ms_path,
         rdb_file,
+        use_patched_mvftoms=use_patched_mvftoms,
         mail_user=mail_user,
         mail_type=mail_type,
     )
