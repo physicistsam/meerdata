@@ -43,6 +43,8 @@ mail_type_option = click.option(
     "See https://slurm.schedmd.com/sbatch.html#OPT_mail-type for all choices",
 )
 
+# venv_option is defined after _validate_venv so the callback can be referenced
+
 use_patched_mvftoms_option = click.option(
     "--use-patched-mvftoms",
     is_flag=True,
@@ -66,6 +68,19 @@ def _validate_venv(ctx, param, value):
             f"{value} does not seem to be a Python virtual environment. {def_err}"
         )
     return value
+
+venv_option = click.option(
+    "--venv",
+    type=click.Path(exists=False, resolve_path=True, path_type=Path),
+    default="/idia/projects/meerklass/virtualenv/meerklass",
+    show_default=True,
+    callback=_validate_venv,
+    help=(
+        "Path to the Python virtual environment to use. "
+        "The specified venv will be activated in generated sbatch scripts "
+        "via `source {venv}/bin/activate`."
+    ),
+)
 
 
 def _extract_cbid_and_token_from_rdb_link(rdb_link):
@@ -176,7 +191,7 @@ def _create_data_scripts(
         mail_type: Optional notification types for SLURM jobs
     """
     scripts = {}
-    python_source = "source ./venv/meerdata/bin/activate"
+    python_source = f"source {venv_path}/bin/activate" if venv_path else "source ./venv/meerdata/bin/activate"
 
     # Download script
     if "download" in steps:
@@ -462,6 +477,7 @@ def cli():
 @mail_type_option
 @dry_run_option
 @use_patched_mvftoms_option
+@venv_option
 @click.option(
     "--no-cleanup",
     is_flag=True,
@@ -475,6 +491,7 @@ def pull(
     mail_type,
     dry_run,
     use_patched_mvftoms,
+    venv,
     no_cleanup,
 ):
     """Download a data block."""
@@ -517,6 +534,7 @@ def pull(
         ms_path,
         local_rdb,
         rdb_link,
+        venv_path=venv,
         use_patched_mvftoms=use_patched_mvftoms,
         mail_user=mail_user,
         mail_type=mail_type,
@@ -539,21 +557,14 @@ def pull(
     show_default=True,
     help="Context folder to save sanity check results.",
 )
-@click.option(
-    "--venv-path",
-    type=click.Path(exists=False, resolve_path=True, path_type=Path),
-    default="/idia/projects/meerklass/virtualenv/meerdata",
-    show_default=True,
-    callback=_validate_venv,
-    help="Path to the Python virtual environment to use.",
-)
+@venv_option
 @mail_user_option
 @mail_type_option
 @dry_run_option
 def check(
     rdb_link,
     context_folder,
-    venv_path,
+    venv,
     mail_user,
     mail_type,
     dry_run,
@@ -583,7 +594,7 @@ def check(
         None,
         token=token,
         context_folder=context_folder,
-        venv_path=venv_path,
+        venv_path=venv,
         mail_user=mail_user,
         mail_type=mail_type,
     )
@@ -671,6 +682,7 @@ def verify(block_number, context_folder):
 @mail_type_option
 @dry_run_option
 @use_patched_mvftoms_option
+@venv_option
 def extract(
     rdb_file,
     correlation,
@@ -679,6 +691,7 @@ def extract(
     mail_type,
     dry_run,
     use_patched_mvftoms,
+    venv,
 ):
     """Extract auto or cross-correlation from local data."""
     # Infer cbid from file path (assume .../<cbid>_sdp_l0.full.rdb)
@@ -719,6 +732,7 @@ def extract(
         full_dest,
         ms_path,
         rdb_file,
+        venv_path=venv,
         use_patched_mvftoms=use_patched_mvftoms,
         mail_user=mail_user,
         mail_type=mail_type,
