@@ -31,6 +31,9 @@ dependencies = [
     "museek @ git+https://github.com/meerklass/museek.git",
 ]
 
+[project.optional-dependencies]
+test = ["pytest"]
+
 [project.urls]
 Homepage = "https://github.com/meerklass/meerdata"
 Documentation = "https://github.com/meerklass/meerdata/blob/main/README.md"
