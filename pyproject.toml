@@ -12,7 +12,7 @@ license = {text = "MIT"}
 authors = [
     {name = "MeerKLASS Team"}
 ]
-keywords = ["meerklass", "data-management", "astronomy"]
+keywords = ["meerklass", "data-management", "astronomy"] .
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -27,7 +27,7 @@ dependencies = [
     "python-casacore",
     "katdal",
     "katpoint",
-    "numba",
+    "katdal",
     "museek @ git+https://github.com/meerklass/museek.git",
 ]
 
