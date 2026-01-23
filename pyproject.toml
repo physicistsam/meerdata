@@ -12,7 +12,7 @@ license = {text = "MIT"}
 authors = [
     {name = "MeerKLASS Team"}
 ]
-keywords = ["meerklass", "data-management", "astronomy"] .
+keywords = ["meerklass", "data-management", "astronomy"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
