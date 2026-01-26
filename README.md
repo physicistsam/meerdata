@@ -29,7 +29,7 @@ Contact @piyanatk if there is any issue with the shared environment
 
 > **Note:** This repository is **private**. You must have been granted access to the `meerklass/meerdata` GitHub repository to install directly from GitHub. If you do not have access, contact the project maintainers (e.g., `@piyanatk`) to request repository access.
 
-**Recommended (SSH):** install via SSH
+**Recommended (SSH):** Add your SSH key to your GitHub account following [GitHub's instruction](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account) and then install via SSH
 
 ```bash
 pip install git+ssh://git@github.com/meerklass/meerdata.git
