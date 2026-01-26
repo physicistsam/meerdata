@@ -10,7 +10,6 @@ A make up word from Afrikaans word "meer" meaning "more" and an English word dat
 ## Requirements
 
 * Access to [SARAO archive](https://archive.sarao.ac.za/). See [Obataining RDB Link.](#obtaining-rdb-link)
-* Access to ilifu although this tool can technically be run on any cluster with a SLURM job scheduler
 * Python >= 3.12
 * `pip` (katdal, museek and other dependencies are installed automatically when installing this package with `pip`)
 
@@ -28,21 +27,47 @@ Contact @piyanatk if there is any issue with the shared environment
 
 ### Option 2: Install from GitHub
 
-```
-pip install git+https://github.com/meerklass/meerdata.git
-```
+> **Note:** This repository is **private**. You must have been granted access to the `meerklass/meerdata` GitHub repository to install directly from GitHub. If you do not have access, contact the project maintainers (e.g., `@piyanatk`) to request repository access.
 
-### Option 2: Manual Installation
-
-This is useful for installing the package in development mode:
+**Recommended (SSH):** install via SSH
 
 ```bash
-# Clone the repository
-git clone https://github.com/meerklass/meerdata.git
-cd meerdata
+pip install git+ssh://git@github.com/meerklass/meerdata.git
+```
 
-# Install in development mode
-pip install -e .
+or clone via SSH and install locally
+
+```bash
+git clone git@github.com:meerklass/meerdata.git
+cd meerdata
+pip install .
+```
+
+**HTTPS with Personal Access Token (if you do not have SSH access):**
+
+```bash
+pip install git+https://<USERNAME>:<TOKEN>@github.com/meerklass/meerdata.git
+```
+
+*Security tip:* avoid exposing tokens in shell history — prefer using a git credential helper or clone the repo locally and run `pip install .` instead.
+
+### Troubleshoot Compiler Issues
+
+If you run into compiler issues when `pip` tries to install `python-casacore`, you may have to pass explict environment variables for C/C++ compilers and turn off pip cache
+
+```
+export CC=gcc
+export CXX=g++
+export CCACHE_DISABLE=1
+pip install git+ssh://git@github.com/meerklass/meerdata.git
+```
+
+### Install in development mode
+
+If you want to contribute to meerdata codes, install in editable mode with test dependencies
+
+```
+pip install -e .[test]
 ```
 
 ## Usage
@@ -70,8 +95,8 @@ meerdata pull -r "RDB_LINK"
   * `auto`: autocorrelations only, i.e. single dish IM data
   * `cross`: cross-correlations (measurement set), i.e. OTF data
   * `all`: both autocorrelations and cross-correlations
-* `--data-folder`: Directory for storing data (default: `/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`)
-* `--venv`: Path to Python virtual environment to use (default: `/idia/projects/meerklass/virtualenv/meerklass`). The specified venv will be activated in generated sbatch scripts via `source {venv}/bin/activate`.
+* `--data-folder`: Directory for storing data (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`) will be used when available (a warning will be emitted).
+* `--venv`: Path to Python virtual environment to use (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/virtualenv/meerklass`) will be used when available (a warning will be emitted). The specified venv will be activated in generated sbatch scripts via `source {venv}/bin/activate`.
 * `--no-cleanup`: Skip the full raw data cleanup step at the end (useful for debugging or preserving raw files).
 
 **Examples:**
@@ -94,6 +119,8 @@ meerdata pull -r "RDB_LINK" --no-cleanup
 
 # Use a specific Python virtual environment for job scripts
 meerdata pull -r "RDB_LINK" --venv /path/to/venv
+
+# Omitting `--venv` will attempt to use the Ilifu default (`/idia/projects/meerklass/virtualenv/meerklass`) if available (a warning will be emitted).
 ```
 
 Note that we keep the data folders organised on ilifu. There should be no need to change --data-folder option if you are downloading the lastest campaign (XLP).
@@ -114,8 +141,8 @@ meerdata extract --rdb-file "PATH_TO_LOCAL_RDB"
   * `auto`: autocorrelations only, i.e. single dish IM data
   * `cross`: cross-correlations (measurement set), i.e. OTF data
   * `all`: both autocorrelations and cross-correlations
-* `--data-folder`: Directory for storing extracted data (default: `/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`)
-* `--venv`: Path to Python virtual environment to use (default: `/idia/projects/meerklass/virtualenv/meerklass`). The specified venv will be activated in generated sbatch scripts via `source {venv}/bin/activate`.
+* `--data-folder`: Directory for storing extracted data (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`) will be used when available (a warning will be emitted).
+* `--venv`: Path to Python virtual environment to use (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/virtualenv/meerklass`) will be used when available (a warning will be emitted). The specified venv will be activated in generated sbatch scripts via `source {venv}/bin/activate`. 
 
 **Examples:**
 
@@ -145,8 +172,8 @@ meerdata check -r "RDB_LINK"
 **Options:**
 
 * `-r, --rdb-link`: SARAO Archive RDB file link (required)
-* `--context-folder`: Directory to save sanity check results (default: `/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/sanity_checks`)
-* `--venv`: Path to Python virtual environment (default: `/idia/projects/meerklass/virtualenv/meerklass`). The specified venv will be validated and activated in the generated sbatch script via `source {venv}/bin/activate`.
+* `--context-folder`: Directory to save sanity check results (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/sanity_checks`) will be used when available (a warning will be emitted).
+* `--venv`: Path to Python virtual environment (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/virtualenv/meerklass`) will be used when available (a warning will be emitted). The specified venv will be validated and activated in the generated sbatch script via `source {venv}/bin/activate`.
 
 **Example:**
 
@@ -167,7 +194,7 @@ meerdata verify -b BLOCK_NUMBER [ -b BLOCK_NUMBER ... ]
 **Options:**
 
 * `-b, --block-number`: Block number(s) to verify (required, can be specified multiple times)
-* `--context-folder`: Directory containing block directories (default: `/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`)
+* `--context-folder`: Directory containing block directories (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`) will be used when available (a warning will be emitted).
 
 **Example:**
 
@@ -200,7 +227,7 @@ A link to the raw `.rdb` file containing the metadata of the data block is requi
 3. Generate and submits SLURM jobs for:
    * Downloading MVF data from SARAO archive using `mvf_download.py` script from `katdal`
    * Extracting autocorrelations (if requested) using `mvf_copy.py` script from `katdal`
-   * Extracting measurement set for cross-correlations (if requested) using `mvftoms_otf_patch.py`, which is our patch version of the `mvftoms.py` from katdal
+   * Extracting measurement set for cross-correlations (if requested) the `mvftoms.py` from katdal (optionally use the local patched version `mvftoms_otf_patch.py` by passsing `--use-patched-mvftoms`)
    * Cleaning up the MVF files after extraction. This cleanup step can be skipped by passing `--no-cleanup` to `pull` (useful for debugging or preserving raw data)
 
 ### Extract Command
