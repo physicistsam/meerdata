@@ -4,6 +4,13 @@ from pathlib import Path
 
 import click
 
+from meerdata.ilifu import (
+    CONTEXT_FOLDER_DEFAULT,
+    DATA_FOLDER_DEFAULT,
+    VENV_DEFAULT,
+    detect_ilifu,
+)
+
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 100}
 PATH_DW = click.Path(
     exists=True,
@@ -14,9 +21,75 @@ PATH_DW = click.Path(
     path_type=Path,
 )
 
+
+def _validate_context_folder(ctx, param, value):
+    """Validate or infer the ilifu context folder path.
+
+    If not provided, try Ilifu detection and default; otherwise require the
+    caller to provide an explicit `--context-folder` path.
+    """
+    if value is None:
+        is_ilifu, markers = detect_ilifu()
+        if is_ilifu:
+            if CONTEXT_FOLDER_DEFAULT.exists():
+                click.echo(
+                    f"WARNING: context folder not provided, "
+                    "but Ilifu context path found. "
+                    f'Using "{CONTEXT_FOLDER_DEFAULT}"'
+                )
+                return CONTEXT_FOLDER_DEFAULT
+            raise click.ClickException(
+                "You appear to be on Ilifu but the default context folder "
+                f'("{CONTEXT_FOLDER_DEFAULT}") does not exist. '
+                "Please supply --context-folder."
+            )
+        raise click.ClickException(
+            "No context folder specified and Ilifu not detected. "
+            "Please supply --context-folder path."
+        )
+
+    if not value.exists():
+        raise click.ClickException(f"Context folder {value} does not exist.")
+    if not value.is_dir():
+        raise click.ClickException(f"{value} is not a directory.")
+    return value
+
+
 rdb_link_option = click.option(
     "-r", "--rdb-link", required=True, help="SARAO Archive RDB file link (full url)."
 )
+
+
+def _validate_data_folder(ctx, param, value):
+    """Validate or infer the ilifu data folder path.
+
+    If not provided, try Ilifu detection and default; otherwise require the
+    caller to provide an explicit `--data-folder` path.
+    """
+    if value is None:
+        is_ilifu, markers = detect_ilifu()
+        if is_ilifu:
+            if DATA_FOLDER_DEFAULT.exists():
+                click.echo(
+                    f"WARNING: data folder not provided, but Ilifu data path found. "
+                    f'Using "{DATA_FOLDER_DEFAULT}"'
+                )
+                return DATA_FOLDER_DEFAULT
+            raise click.ClickException(
+                "You appear to be on Ilifu but the default data folder "
+                f'("{DATA_FOLDER_DEFAULT}") does not exist. Please supply --data-folder.'
+            )
+        raise click.ClickException(
+            "No data folder specified and Ilifu not detected. Please supply --data-folder path."
+        )
+
+    if not value.exists():
+        raise click.ClickException(f"Data folder {value} does not exist.")
+    if not value.is_dir():
+        raise click.ClickException(f"{value} is not a directory.")
+    return value
+
+
 dry_run_option = click.option(
     "--dry-run",
     is_flag=True,
@@ -25,9 +98,14 @@ dry_run_option = click.option(
 data_folder_option = click.option(
     "--data-folder",
     type=PATH_DW,
-    default="/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw",
-    show_default=True,
-    help="Directory for storing the extracted data",
+    default=None,
+    show_default=False,
+    callback=_validate_data_folder,
+    help=(
+        "Directory for storing the extracted data. If not provided, the Ilifu default "
+        "('/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw') will be used "
+        "when available (a warning will be emitted)."
+    ),
 )
 mail_user_option = click.option(
     "--mail-user",
@@ -43,7 +121,6 @@ mail_type_option = click.option(
     "See https://slurm.schedmd.com/sbatch.html#OPT_mail-type for all choices",
 )
 
-# venv_option is defined after _validate_venv so the callback can be referenced
 
 use_patched_mvftoms_option = click.option(
     "--use-patched-mvftoms",
@@ -58,25 +135,53 @@ use_patched_mvftoms_option = click.option(
 
 
 def _validate_venv(ctx, param, value):
+    """Validate or infer the path to a Python virtual environment.
+
+    If --venv is provided, verify that it exists and contains bin/activate.
+    If --venv is not provided, try the Ilifu default path and use it with a
+    warning. If the Ilifu default does not exist, raise a ClickException.
+    """
     def_err = "See README.md for installation instruction."
+
+    # If the user didn't provide a venv, try Ilifu detection and default
+    if value is None:
+        is_ilifu, markers = detect_ilifu()
+        if is_ilifu:
+            if VENV_DEFAULT.exists():
+                click.echo(
+                    f"WARNING: venv is not provided, but Ilifu appears to be available. "
+                    f'Using "{VENV_DEFAULT}" environment'
+                )
+                return VENV_DEFAULT
+            raise click.ClickException(
+                "You appear to be on Ilifu but the default venv "
+                f'("{VENV_DEFAULT}") does not exist. Please supply --venv path.'
+            )
+        raise click.ClickException(
+            "No virtual environment specified and Ilifu not detected. Please supply --venv path to the virtual environment."
+        )
+
     if not value.exists():
-        raise FileNotFoundError(
-            f"Python virtual environment directory {value} does not exists. {def_err}"
+        raise click.ClickException(
+            f"Python virtual environment directory {value} does not exist. {def_err}"
         )
     if not (value / "bin/activate").exists():
-        raise RuntimeError(
+        raise click.ClickException(
             f"{value} does not seem to be a Python virtual environment. {def_err}"
         )
     return value
 
+
 venv_option = click.option(
     "--venv",
     type=click.Path(exists=False, resolve_path=True, path_type=Path),
-    default="/idia/projects/meerklass/virtualenv/meerklass",
-    show_default=True,
+    default=None,
+    show_default=False,
     callback=_validate_venv,
     help=(
         "Path to the Python virtual environment to use. "
+        "If not provided, the Ilifu default "
+        '"/idia/projects/meerklass/virtualenv/meerklass" will be used when available. '
         "The specified venv will be activated in generated sbatch scripts "
         "via `source {venv}/bin/activate`."
     ),
@@ -191,7 +296,11 @@ def _create_data_scripts(
         mail_type: Optional notification types for SLURM jobs
     """
     scripts = {}
-    python_source = f"source {venv_path}/bin/activate" if venv_path else "source ./venv/meerdata/bin/activate"
+    python_source = (
+        f"source {venv_path}/bin/activate"
+        if venv_path
+        else "source ./venv/meerdata/bin/activate"
+    )
 
     # Download script
     if "download" in steps:
@@ -551,11 +660,15 @@ def pull(
 @rdb_link_option
 @click.option(
     "--context-folder",
-    required=True,
     type=PATH_DW,
-    default="/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/sanity_checks",
-    show_default=True,
-    help="Context folder to save sanity check results.",
+    default=None,
+    show_default=False,
+    callback=_validate_context_folder,
+    help=(
+        "Context folder to save sanity check results. If not provided, the Ilifu default "
+        "('/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/sanity_checks') will be used "
+        "when available (a warning will be emitted)."
+    ),
 )
 @venv_option
 @mail_user_option
@@ -617,10 +730,15 @@ def check(
 )
 @click.option(
     "--context-folder",
-    type=click.Path(exists=True, resolve_path=True, path_type=Path),
-    default="/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw",
-    show_default=True,
-    help="Context folder containing block directories.",
+    type=PATH_DW,
+    default=None,
+    show_default=False,
+    callback=_validate_data_folder,
+    help=(
+        "Context folder containing block directories. If not provided, the Ilifu default "
+        "('/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw') will be used "
+        "when available (a warning will be emitted)."
+    ),
 )
 def verify(block_number, context_folder):
     """Verify existent and disk usage of data blocks."""

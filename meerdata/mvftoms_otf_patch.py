@@ -31,19 +31,18 @@ import urllib.parse
 from collections import namedtuple
 
 import dask
+import katdal
 import katpoint
 import numba
 import numpy as np
-
-import katdal
 from katdal import averager, ms_async, ms_extra
 from katdal.flags import NAMES as FLAG_NAMES
 from katdal.lazy_indexer import DaskLazyIndexer
 from katdal.sensordata import telstate_decode
 
-SLOTS = 4    # Controls overlap between loading and writing
+SLOTS = 4  # Controls overlap between loading and writing
 
-CPInfo = namedtuple('CPInfo', 'ant1_index ant2_index ant1 ant2 cp_index')
+CPInfo = namedtuple("CPInfo", "ant1_index ant2_index ant1 ant2 cp_index")
 
 
 def casa_style_int_list(range_string, use_argparse=False, opt_unit="m"):
@@ -57,7 +56,7 @@ def casa_style_int_list(range_string, use_argparse=False, opt_unit="m"):
     if range_string in ("", "*"):
         return None
     RangeException = argparse.ArgumentTypeError if use_argparse else ValueError
-    range_type = r"^((\d+)[{0}]?)?(~(\d+)[{0}]?)?$".format(opt_unit)
+    range_type = rf"^((\d+)[{opt_unit}]?)?(~(\d+)[{opt_unit}]?)?$"
     vals = []
     for val in range_string.split(","):
         match = re.match(range_type, val.strip())
@@ -79,20 +78,20 @@ def casa_style_int_list(range_string, use_argparse=False, opt_unit="m"):
 def default_ms_name(args, centre_freq=None):
     """Infer default MS name from argument list and optional frequency label."""
     # Use the first dataset in the list to generate the base part of the MS name
-    url_parts = urllib.parse.urlparse(args[0], scheme='file')
+    url_parts = urllib.parse.urlparse(args[0], scheme="file")
     # Create MS in current working directory (strip off directories)
     dataset_filename = os.path.basename(url_parts.path)
     # Get rid of the ".full" bit on RDB files (it's the same dataset)
-    full_rdb_ext = '.full.rdb'
+    full_rdb_ext = ".full.rdb"
     if dataset_filename.endswith(full_rdb_ext):
-        dataset_basename = dataset_filename[:-len(full_rdb_ext)]
+        dataset_basename = dataset_filename[: -len(full_rdb_ext)]
     else:
         dataset_basename = os.path.splitext(dataset_filename)[0]
     # Add frequency to name to disambiguate multiple spectral windows
     if centre_freq:
-        dataset_basename += f'_{int(centre_freq)}Hz'
+        dataset_basename += f"_{int(centre_freq)}Hz"
     # Add ".et_al" as reminder that we concatenated multiple datasets
-    return '{}{}.ms'.format(dataset_basename, "" if len(args) == 1 else ".et_al")
+    return "{}{}.ms".format(dataset_basename, "" if len(args) == 1 else ".et_al")
 
 
 def load(dataset, indices, vis, weights, flags):
@@ -112,8 +111,11 @@ def load(dataset, indices, vis, weights, flags):
         Outputs, which must have the correct shape and type
     """
     if isinstance(dataset.vis, DaskLazyIndexer):
-        DaskLazyIndexer.get([dataset.vis, dataset.weights, dataset.flags], indices,
-                            out=[vis, weights, flags])
+        DaskLazyIndexer.get(
+            [dataset.vis, dataset.weights, dataset.flags],
+            indices,
+            out=[vis, weights, flags],
+        )
     else:
         vis[:] = dataset.vis[indices]
         weights[:] = dataset.weights[indices]
@@ -121,7 +123,9 @@ def load(dataset, indices, vis, weights, flags):
 
 
 @numba.jit(nopython=True, parallel=True)
-def permute_baselines(in_vis, in_weights, in_flags, cp_index, out_vis, out_weights, out_flags):
+def permute_baselines(
+    in_vis, in_weights, in_flags, cp_index, out_vis, out_weights, out_flags
+):
     """Reorganise baselines and axis order.
 
     The inputs have dimensions (time, channel, pol-baseline), and the output has shape
@@ -163,93 +167,188 @@ def permute_baselines(in_vis, in_weights, in_flags, cp_index, out_vis, out_weigh
 
 
 def main():
-    tag_to_intent = {'gaincal': 'CALIBRATE_PHASE,CALIBRATE_AMPLI',
-                     'bpcal': 'CALIBRATE_BANDPASS,CALIBRATE_FLUX',
-                     'target': 'TARGET'}
+    tag_to_intent = {
+        "gaincal": "CALIBRATE_PHASE,CALIBRATE_AMPLI",
+        "bpcal": "CALIBRATE_BANDPASS,CALIBRATE_FLUX",
+        "target": "TARGET",
+    }
 
     usage = "%(prog)s [options] <dataset> [<dataset2>]*"
-    description = "Convert MVF dataset(s) to CASA MeasurementSet. The datasets may " \
-                  "be local filenames or archive URLs (including access tokens). " \
-                  "If there are multiple datasets they will be concatenated via " \
-                  "katdal before conversion."
+    description = (
+        "Convert MVF dataset(s) to CASA MeasurementSet. The datasets may "
+        "be local filenames or archive URLs (including access tokens). "
+        "If there are multiple datasets they will be concatenated via "
+        "katdal before conversion."
+    )
     parser = argparse.ArgumentParser(usage=usage, description=description)
-    parser.add_argument("-o", "--output-ms", default=None,
-                        help="Name of output MeasurementSet")
-    parser.add_argument("-c", "--circular", action="store_true", default=False,
-                        help="Produce quad circular polarisation. (RR, RL, LR, LL) "
-                             "*** Currently just relabels the linear pols ****")
-    parser.add_argument("-r", "--ref-ant",
-                        help="Override the reference antenna used to pick targets "
-                             "and scans (default is the 'array' antenna in MVFv4 "
-                             "and the first antenna in older formats)")
-    parser.add_argument("-t", "--tar", action="store_true", default=False,
-                        help="Tar-ball the MS")
-    parser.add_argument("-f", "--full_pol", action="store_true", default=False,
-                        help="Produce a full polarisation MS in CASA canonical order "
-                             "(HH, HV, VH, VV). Default is to produce HH,VV only.")
-    parser.add_argument("-v", "--verbose", action="store_true", default=False,
-                        help="More verbose progress information")
-    parser.add_argument("-w", "--stop-w", action="store_true", default=False,
-                        help="Use W term to stop fringes for each baseline")
-    parser.add_argument("-p", "--pols-to-use", default=None,
-                        help="Select polarisation products to include in MS as "
-                             "comma-separated list (from: HH, HV, VH, VV). "
-                             "Default is all available from (HH, VV).")
-    parser.add_argument("-u", "--uvfits", action="store_true", default=False,
-                        help="Print command to convert MS to miriad uvfits in casapy")
-    parser.add_argument("-a", "--no-auto", action="store_true", default=False,
-                        help="MeasurementSet will exclude autocorrelation data")
-    parser.add_argument("-s", "--keep-spaces", action="store_true", default=False,
-                        help="Keep spaces in source names, default removes spaces")
-    parser.add_argument("-C", "--channel-range",
-                        help="Range of frequency channels to keep (zero-based inclusive "
-                             "'first_chan,last_chan', default is all channels)")
-    parser.add_argument("-e", "--elevation-range",
-                        help="Flag elevations outside the range "
-                             "'lowest_elevation,highest_elevation'")
-    parser.add_argument("-m", "--model-data", action="store_true", default=False,
-                        help="Add MODEL_DATA and CORRECTED_DATA columns to the MS. "
-                             "MODEL_DATA initialised to unity amplitude zero phase, "
-                             "CORRECTED_DATA initialised to DATA.")
-    flag_names = ', '.join(name for name in FLAG_NAMES if not name.startswith('reserved'))
-    parser.add_argument("--flags", default="all",
-                        help="List of online flags to apply "
-                             "(from " + flag_names + ") "
-                             "default is all flags, '' will apply no flags)")
-    parser.add_argument("--dumptime", type=float, default=0.0,
-                        help="Output time averaging interval in seconds, "
-                             "default is no averaging")
-    parser.add_argument("--chanbin", type=int, default=0,
-                        help="Bin width for channel averaging in channels, "
-                             "default is no averaging")
-    parser.add_argument("--flagav", action="store_true", default=False,
-                        help="If a single element in an averaging bin is flagged, "
-                             "flag the averaged bin")
-    parser.add_argument("--caltables", action="store_true", default=False,
-                        help="Create calibration tables from gain solutions in "
-                             "the dataset (if present)")
-    parser.add_argument("--quack", type=int, default=1, metavar='N',
-                        help="Discard the first N dumps "
-                             "(which are frequently incomplete)")
-    parser.add_argument("--applycal", default="",
-                        help="List of calibration solutions to apply to data as "
-                             "a string of comma-separated names, e.g. 'l1' or "
-                             "'K,B,G'. Use 'default' for L1 + L2 and 'all' for "
-                             "all available products.")
-    parser.add_argument("--target", default=[], action="append",
-                        help="Select only specified target field (name). This switch can "
-                             "be specified multiple times if need be. Default is select "
-                             "all fields.")
-    parser.add_argument("--ant", default=[], action="append",
-                        help="Select only specified antenna (specified as name). This switch can "
-                             "be specified multiple times if need be. Default is select "
-                             "all antennas.")
-    parser.add_argument("--scans", default="",
-                        type=lambda x: casa_style_int_list(x, use_argparse=True, opt_unit="m"),
-                        help="Only select a range of tracking scans. Default is select all "
-                             "tracking scans. Accepts a comma list or a casa style range "
-                             "such as 5~10.")
-    parser.add_argument("datasets", help="Dataset path", nargs='+')
+    parser.add_argument(
+        "-o", "--output-ms", default=None, help="Name of output MeasurementSet"
+    )
+    parser.add_argument(
+        "-c",
+        "--circular",
+        action="store_true",
+        default=False,
+        help="Produce quad circular polarisation. (RR, RL, LR, LL) "
+        "*** Currently just relabels the linear pols ****",
+    )
+    parser.add_argument(
+        "-r",
+        "--ref-ant",
+        help="Override the reference antenna used to pick targets "
+        "and scans (default is the 'array' antenna in MVFv4 "
+        "and the first antenna in older formats)",
+    )
+    parser.add_argument(
+        "-t", "--tar", action="store_true", default=False, help="Tar-ball the MS"
+    )
+    parser.add_argument(
+        "-f",
+        "--full_pol",
+        action="store_true",
+        default=False,
+        help="Produce a full polarisation MS in CASA canonical order "
+        "(HH, HV, VH, VV). Default is to produce HH,VV only.",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="More verbose progress information",
+    )
+    parser.add_argument(
+        "-w",
+        "--stop-w",
+        action="store_true",
+        default=False,
+        help="Use W term to stop fringes for each baseline",
+    )
+    parser.add_argument(
+        "-p",
+        "--pols-to-use",
+        default=None,
+        help="Select polarisation products to include in MS as "
+        "comma-separated list (from: HH, HV, VH, VV). "
+        "Default is all available from (HH, VV).",
+    )
+    parser.add_argument(
+        "-u",
+        "--uvfits",
+        action="store_true",
+        default=False,
+        help="Print command to convert MS to miriad uvfits in casapy",
+    )
+    parser.add_argument(
+        "-a",
+        "--no-auto",
+        action="store_true",
+        default=False,
+        help="MeasurementSet will exclude autocorrelation data",
+    )
+    parser.add_argument(
+        "-s",
+        "--keep-spaces",
+        action="store_true",
+        default=False,
+        help="Keep spaces in source names, default removes spaces",
+    )
+    parser.add_argument(
+        "-C",
+        "--channel-range",
+        help="Range of frequency channels to keep (zero-based inclusive "
+        "'first_chan,last_chan', default is all channels)",
+    )
+    parser.add_argument(
+        "-e",
+        "--elevation-range",
+        help="Flag elevations outside the range 'lowest_elevation,highest_elevation'",
+    )
+    parser.add_argument(
+        "-m",
+        "--model-data",
+        action="store_true",
+        default=False,
+        help="Add MODEL_DATA and CORRECTED_DATA columns to the MS. "
+        "MODEL_DATA initialised to unity amplitude zero phase, "
+        "CORRECTED_DATA initialised to DATA.",
+    )
+    flag_names = ", ".join(
+        name for name in FLAG_NAMES if not name.startswith("reserved")
+    )
+    parser.add_argument(
+        "--flags",
+        default="all",
+        help="List of online flags to apply "
+        "(from " + flag_names + ") "
+        "default is all flags, '' will apply no flags)",
+    )
+    parser.add_argument(
+        "--dumptime",
+        type=float,
+        default=0.0,
+        help="Output time averaging interval in seconds, default is no averaging",
+    )
+    parser.add_argument(
+        "--chanbin",
+        type=int,
+        default=0,
+        help="Bin width for channel averaging in channels, default is no averaging",
+    )
+    parser.add_argument(
+        "--flagav",
+        action="store_true",
+        default=False,
+        help="If a single element in an averaging bin is flagged, "
+        "flag the averaged bin",
+    )
+    parser.add_argument(
+        "--caltables",
+        action="store_true",
+        default=False,
+        help="Create calibration tables from gain solutions in "
+        "the dataset (if present)",
+    )
+    parser.add_argument(
+        "--quack",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Discard the first N dumps (which are frequently incomplete)",
+    )
+    parser.add_argument(
+        "--applycal",
+        default="",
+        help="List of calibration solutions to apply to data as "
+        "a string of comma-separated names, e.g. 'l1' or "
+        "'K,B,G'. Use 'default' for L1 + L2 and 'all' for "
+        "all available products.",
+    )
+    parser.add_argument(
+        "--target",
+        default=[],
+        action="append",
+        help="Select only specified target field (name). This switch can "
+        "be specified multiple times if need be. Default is select "
+        "all fields.",
+    )
+    parser.add_argument(
+        "--ant",
+        default=[],
+        action="append",
+        help="Select only specified antenna (specified as name). This switch can "
+        "be specified multiple times if need be. Default is select "
+        "all antennas.",
+    )
+    parser.add_argument(
+        "--scans",
+        default="",
+        type=lambda x: casa_style_int_list(x, use_argparse=True, opt_unit="m"),
+        help="Only select a range of tracking scans. Default is select all "
+        "tracking scans. Accepts a comma list or a casa style range "
+        "such as 5~10.",
+    )
+    parser.add_argument("datasets", help="Dataset path", nargs="+")
 
     parseargs = parser.parse_args()
     # positional arguments are now part of arguments, but lets keep the logic the same
@@ -257,15 +356,19 @@ def main():
     args = parseargs.datasets
 
     # Loading is I/O-bound, so give more threads than CPUs
-    dask.config.set(pool=multiprocessing.pool.ThreadPool(4 * multiprocessing.cpu_count()))
+    dask.config.set(
+        pool=multiprocessing.pool.ThreadPool(4 * multiprocessing.cpu_count())
+    )
 
     if len(args) < 1:
         parser.print_help()
         raise RuntimeError("Please provide one or more MVF dataset names as arguments")
 
-    if options.elevation_range and len(options.elevation_range.split(',')) < 2:
-        raise RuntimeError("You have selected elevation flagging. Please provide elevation "
-                           "limits in the form 'lowest_elevation,highest_elevation'.")
+    if options.elevation_range and len(options.elevation_range.split(",")) < 2:
+        raise RuntimeError(
+            "You have selected elevation flagging. Please provide elevation "
+            "limits in the form 'lowest_elevation,highest_elevation'."
+        )
 
     if len(args) > 1:
         print("Concatenating multiple datasets into single MS.")
@@ -294,9 +397,11 @@ def main():
         # Order as similarly to the input as possible, which gives better performance
         # in permute_baselines.
         bl_indices = list(zip(ant1_index, ant2_index))
-        bl_indices.sort(key=lambda ants: _cp_index(dataset.ants[ants[0]],
-                                                   dataset.ants[ants[1]],
-                                                   pols_to_use[0]))
+        bl_indices.sort(
+            key=lambda ants: _cp_index(
+                dataset.ants[ants[0]], dataset.ants[ants[1]], pols_to_use[0]
+            )
+        )
         # Undo the zip
         ant1_index[:] = [bl[0] for bl in bl_indices]
         ant2_index[:] = [bl[1] for bl in bl_indices]
@@ -304,9 +409,9 @@ def main():
         ant2 = [dataset.ants[a2] for a2 in ant2_index]
 
         # Create actual correlator product index
-        cp_index = [_cp_index(a1, a2, p)
-                    for a1, a2 in zip(ant1, ant2)
-                    for p in pols_to_use]
+        cp_index = [
+            _cp_index(a1, a2, p) for a1, a2 in zip(ant1, ant2) for p in pols_to_use
+        ]
         cp_index = np.array(cp_index, dtype=np.int32)
 
         return CPInfo(ant1_index, ant2_index, ant1, ant2, cp_index)
@@ -316,10 +421,12 @@ def main():
     # katdal can handle a list of datasets, which get virtually concatenated internally
     dataset = katdal.open(open_args, ref_ant=options.ref_ant, applycal=options.applycal)
     if dataset.applycal_products:
-        print('The following calibration products will be applied:',
-              ', '.join(dataset.applycal_products))
+        print(
+            "The following calibration products will be applied:",
+            ", ".join(dataset.applycal_products),
+        )
     else:
-        print('No calibration products will be applied')
+        print("No calibration products will be applied")
 
     # select a subset of antennas
     avail_ants = [a.name for a in dataset.ants]
@@ -334,14 +441,18 @@ def main():
     avail_ant_str = ", ".join(map(repr, avail_ants))
 
     if not set(dump_ants) <= set(avail_ants):
-        raise RuntimeError("One or more antennas cannot be found in the dataset. "
-                           f"You requested {dump_ant_str} but only {avail_ant_str} are available.")
+        raise RuntimeError(
+            "One or more antennas cannot be found in the dataset. "
+            f"You requested {dump_ant_str} but only {avail_ant_str} are available."
+        )
 
     if len(dump_ants) == 0:
-        print('User antenna criterion resulted in empty database, nothing to be done. '
-              f'Perhaps you wanted to select from the following: {avail_ant_str}')
+        print(
+            "User antenna criterion resulted in empty database, nothing to be done. "
+            f"Perhaps you wanted to select from the following: {avail_ant_str}"
+        )
 
-    print(f'Per user request the following antennas will be selected: {dump_ant_str}')
+    print(f"Per user request the following antennas will be selected: {dump_ant_str}")
 
     # select a subset of targets
     avail_fields = [f.name for f in dataset.catalogue.targets]
@@ -357,55 +468,75 @@ def main():
     avail_field_str = ", ".join(map(repr, avail_fields))
 
     if not set(dump_fields) <= set(avail_fields):
-        raise RuntimeError("One or more fields cannot be found in the dataset. "
-                           f"You requested {dump_field_str} but only {avail_field_str} are available.")
+        raise RuntimeError(
+            "One or more fields cannot be found in the dataset. "
+            f"You requested {dump_field_str} but only {avail_field_str} are available."
+        )
 
     if len(dump_fields) == 0:
-        print('User target field criterion resulted in empty database, nothing to be done. '
-              f'Perhaps you wanted to select from the following: {avail_field_str}')
+        print(
+            "User target field criterion resulted in empty database, nothing to be done. "
+            f"Perhaps you wanted to select from the following: {avail_field_str}"
+        )
 
-    print(f'Per user request the following target fields will be selected: {dump_field_str}')
+    print(
+        f"Per user request the following target fields will be selected: {dump_field_str}"
+    )
 
     dataset.select(targets=dump_fields)
 
     # get a set of user selected available tracking scans, ignore slew scans
-    avail_tracks = list(map(lambda x: x[0],
-                            filter(lambda x: x[1] in ('track','scan'),
-                                   dataset.scans())))
+    avail_tracks = list(
+        map(
+            lambda x: x[0], filter(lambda x: x[1] in ("track", "scan"), dataset.scans())
+        )
+    )
     dump_scans = options.scans if options.scans else avail_tracks
     dump_scans = list(set(dump_scans).intersection(set(avail_tracks)))
     if len(dump_scans) == 0:
         avail_track_str = ", ".join(map(str, avail_tracks))
-        raise RuntimeError('User scan criterion resulted in empty database, nothing to be done. '
-                           f'Perhaps you wanted to select from the following: {avail_track_str}')
+        raise RuntimeError(
+            "User scan criterion resulted in empty database, nothing to be done. "
+            f"Perhaps you wanted to select from the following: {avail_track_str}"
+        )
 
-    print(f'Per user request the following scans will be dumped: {", ".join(map(str, dump_scans))}')
+    print(
+        f"Per user request the following scans will be dumped: {', '.join(map(str, dump_scans))}"
+    )
 
     # Get list of unique polarisation products in the dataset
-    pols_in_dataset = np.unique([(cp[0][-1] + cp[1][-1]).upper() for cp in dataset.corr_products])
+    pols_in_dataset = np.unique(
+        [(cp[0][-1] + cp[1][-1]).upper() for cp in dataset.corr_products]
+    )
 
     # Which polarisation do we want to write into the MS
     # select all possible pols if full-pol selected, otherwise the selected polarisations via pols_to_use
     # otherwise finally select any of HH,VV present (the default).
-    pols_to_use = ['HH', 'HV', 'VH', 'VV'] if (options.full_pol or options.circular) else \
-        list(np.unique(options.pols_to_use.split(','))) if options.pols_to_use else \
-        [pol for pol in ['HH', 'VV'] if pol in pols_in_dataset]
+    pols_to_use = (
+        ["HH", "HV", "VH", "VV"]
+        if (options.full_pol or options.circular)
+        else list(np.unique(options.pols_to_use.split(",")))
+        if options.pols_to_use
+        else [pol for pol in ["HH", "VV"] if pol in pols_in_dataset]
+    )
 
     # Check we have the chosen polarisations
     if np.any([pol not in pols_in_dataset for pol in pols_to_use]):
-        raise RuntimeError(f"Selected polarisation(s): {', '.join(pols_to_use)} not available. "
-                           f"Available polarisation(s): {','.join(pols_in_dataset)}")
+        raise RuntimeError(
+            f"Selected polarisation(s): {', '.join(pols_to_use)} not available. "
+            f"Available polarisation(s): {','.join(pols_in_dataset)}"
+        )
 
     # Set full_pol if this is selected via options.pols_to_use
-    if set(pols_to_use) == {'HH', 'HV', 'VH', 'VV'} and not options.circular:
+    if set(pols_to_use) == {"HH", "HV", "VH", "VV"} and not options.circular:
         options.full_pol = True
 
     # Extract one MS per spectral window in the dataset(s)
     for win in range(len(dataset.spectral_windows)):
-        dataset.select(reset='T')
+        dataset.select(reset="T")
 
         centre_freq = dataset.spectral_windows[win].centre_freq
-        print(f'Extract MS for spw {win}: centre frequency {int(centre_freq)} Hz')
+        print(f"Extract MS for spw {win}: centre frequency {int(centre_freq)} Hz")
 
         # If no output MS directory name supplied, infer it from dataset(s)
         if options.output_ms is None:
@@ -419,55 +550,75 @@ def main():
         basename = os.path.splitext(ms_name)[0]
 
         # Discard first N dumps which are frequently incomplete
-        dataset.select(spw=win,
-                       scans=dump_scans,  # should already be filtered to target type only
-                       targets=dump_fields,
-                       flags=options.flags,
-                       ants=dump_ants,
-                       dumps=slice(options.quack, None))
+        dataset.select(
+            spw=win,
+            scans=dump_scans,  # should already be filtered to target type only
+            targets=dump_fields,
+            flags=options.flags,
+            ants=dump_ants,
+            dumps=slice(options.quack, None),
+        )
 
         print("Will create MS output in " + ms_name)
 
         # Instructions to flag by elevation if requested
         if options.elevation_range is not None:
-            emin, emax = options.elevation_range.split(',')
-            print("\nThe MS can be flagged by elevation in casapy v3.4.0 or higher, with the command:")
-            print(f"      tflagdata(vis='{ms_name}', mode='elevation', lowerlimit={emin}, "
-                  f"upperlimit={emax}, action='apply')\n")
+            emin, emax = options.elevation_range.split(",")
+            print(
+                "\nThe MS can be flagged by elevation in casapy v3.4.0 or higher, with the command:"
+            )
+            print(
+                f"      tflagdata(vis='{ms_name}', mode='elevation', lowerlimit={emin}, "
+                f"upperlimit={emax}, action='apply')\n"
+            )
 
         # Instructions to create uvfits file if requested
         if options.uvfits:
             uv_name = basename + ".uvfits"
-            print("\nThe MS can be converted into a uvfits file in casapy, with the command:")
-            print(f"      exportuvfits(vis='{ms_name}', fitsfile='{uv_name}', datacolumn='data')\n")
+            print(
+                "\nThe MS can be converted into a uvfits file in casapy, with the command:"
+            )
+            print(
+                f"      exportuvfits(vis='{ms_name}', fitsfile='{uv_name}', datacolumn='data')\n"
+            )
 
         if options.full_pol:
             print("\n#### Producing a full polarisation MS (HH,HV,VH,VV) ####\n")
         else:
-            print(f"\n#### Producing MS with {','.join(pols_to_use)} polarisation(s) ####\n")
+            print(
+                f"\n#### Producing MS with {','.join(pols_to_use)} polarisation(s) ####\n"
+            )
 
         # if fringe stopping is requested, check that it has not already been done in hardware
         if options.stop_w:
             print("W term in UVW coordinates will be used to stop the fringes.")
             try:
-                autodelay = [int(ad) for ad in dataset.sensor['DBE/auto-delay']]
+                autodelay = [int(ad) for ad in dataset.sensor["DBE/auto-delay"]]
                 if all(autodelay):
-                    print("Fringe-stopping already performed in hardware... "
-                          "do you really want to stop the fringes here?")
+                    print(
+                        "Fringe-stopping already performed in hardware... "
+                        "do you really want to stop the fringes here?"
+                    )
             except KeyError:
                 pass
 
         # Select frequency channel range
         if options.channel_range is not None:
-            channel_range = [int(chan_str) for chan_str in options.channel_range.split(',')]
+            channel_range = [
+                int(chan_str) for chan_str in options.channel_range.split(",")
+            ]
             first_chan, last_chan = channel_range[0], channel_range[1]
 
             if (first_chan < 0) or (last_chan >= dataset.shape[1]):
-                raise RuntimeError("Requested channel range outside data set boundaries. "
-                                   f"Set channels in the range [0,{dataset.shape[1] - 1}]")
+                raise RuntimeError(
+                    "Requested channel range outside data set boundaries. "
+                    f"Set channels in the range [0,{dataset.shape[1] - 1}]"
+                )
             if first_chan > last_chan:
-                raise RuntimeError(f"First channel ({first_chan}) bigger than last channel "
-                                   f"({last_chan}) - did you mean it the other way around?")
+                raise RuntimeError(
+                    f"First channel ({first_chan}) bigger than last channel "
+                    f"({last_chan}) - did you mean it the other way around?"
+                )
 
             chan_range = slice(first_chan, last_chan + 1)
             print(f"\nChannel range {first_chan} through {last_chan}.")
@@ -485,10 +636,14 @@ def main():
             # Check how many channels we are dropping
             chan_remainder = nchan % options.chanbin
             avg_nchan = int(nchan / min(nchan, options.chanbin))
-            print(f"Averaging {options.chanbin} channels, output ms will have {avg_nchan} channels.")
+            print(
+                f"Averaging {options.chanbin} channels, output ms will have {avg_nchan} channels."
+            )
             if chan_remainder > 0:
-                print(f"The last {chan_remainder} channels in the data will be dropped "
-                      f"during averaging ({options.chanbin} does not divide {nchan}).")
+                print(
+                    f"The last {chan_remainder} channels in the data will be dropped "
+                    f"during averaging ({options.chanbin} does not divide {nchan})."
+                )
             chan_av = options.chanbin
             nchan = avg_nchan
         else:
@@ -511,21 +666,23 @@ def main():
             time_av = dataset.dump_period
 
         # Print a message if extending flags to averaging bins.
-        if average_data and options.flagav and options.flags != '':
+        if average_data and options.flagav and options.flags != "":
             print("Extending flags to averaging bins.")
 
         # Optionally keep only cross-correlation products
         if options.no_auto:
-            dataset.select(corrprods='cross')
+            dataset.select(corrprods="cross")
             print("\nCross-correlations only.")
 
-        print(f"\nUsing {dataset.ref_ant} as the reference antenna. All targets and scans "
-              "will be based on this antenna.\n")
+        print(
+            f"\nUsing {dataset.ref_ant} as the reference antenna. All targets and scans "
+            "will be based on this antenna.\n"
+        )
         # MS expects timestamps in MJD seconds
         start_time = dataset.start_time.to_mjd() * 24 * 60 * 60
         end_time = dataset.end_time.to_mjd() * 24 * 60 * 60
         # MVF version 1 and 2 datasets are KAT-7; the rest are MeerKAT
-        telescope_name = 'KAT-7' if dataset.version[0] in '12' else 'MeerKAT'
+        telescope_name = "KAT-7" if dataset.version[0] in "12" else "MeerKAT"
 
         # increment scans sequentially in the ms
         scan_itr = 1
@@ -536,7 +693,7 @@ def main():
         npol = len(pols_to_use)
 
         field_names, field_centers, field_times = [], [], []
-        obs_modes = ['UNKNOWN']
+        obs_modes = ["UNKNOWN"]
         total_size = 0
         ms_start_row = 0
         rows_per_ms_chunk = nbl
@@ -547,31 +704,44 @@ def main():
             # Redo the last dump on disk since it's probably incomplete after a crash
             ms_start_row = max(existing_rows - rows_per_ms_chunk, 0)
             ms_dumps_to_skip = ms_start_row // rows_per_ms_chunk
-            print(f"MS '{ms_name}' already exists - "
-                  f"continuing at dump {ms_dumps_to_skip}...")
+            print(
+                f"MS '{ms_name}' already exists - "
+                f"continuing at dump {ms_dumps_to_skip}..."
+            )
         else:
             # Create the MeasurementSet
             table_desc, dminfo = ms_extra.kat_ms_desc_and_dminfo(
-            nbl=nbl, nchan=nchan, ncorr=npol, model_data=options.model_data)
+                nbl=nbl, nchan=nchan, ncorr=npol, model_data=options.model_data
+            )
 
             ms_extra.create_ms(ms_name, table_desc, dminfo)
 
             ms_dict = {}
-            ms_dict['ANTENNA'] = ms_extra.populate_antenna_dict([ant.name for ant in dataset.ants],
-                                                                [ant.position_ecef for ant in dataset.ants],
-                                                                [ant.diameter for ant in dataset.ants])
-            ms_dict['FEED'] = ms_extra.populate_feed_dict(len(dataset.ants), num_receptors_per_feed=2)
-            ms_dict['DATA_DESCRIPTION'] = ms_extra.populate_data_description_dict()
-            ms_dict['POLARIZATION'] = ms_extra.populate_polarization_dict(ms_pols=pols_to_use,
-                                                                          circular=options.circular)
-            ms_dict['OBSERVATION'] = ms_extra.populate_observation_dict(
-                start_time, end_time, telescope_name, dataset.observer, dataset.experiment_id)
+            ms_dict["ANTENNA"] = ms_extra.populate_antenna_dict(
+                [ant.name for ant in dataset.ants],
+                [ant.position_ecef for ant in dataset.ants],
+                [ant.diameter for ant in dataset.ants],
+            )
+            ms_dict["FEED"] = ms_extra.populate_feed_dict(
+                len(dataset.ants), num_receptors_per_feed=2
+            )
+            ms_dict["DATA_DESCRIPTION"] = ms_extra.populate_data_description_dict()
+            ms_dict["POLARIZATION"] = ms_extra.populate_polarization_dict(
+                ms_pols=pols_to_use, circular=options.circular
+            )
+            ms_dict["OBSERVATION"] = ms_extra.populate_observation_dict(
+                start_time,
+                end_time,
+                telescope_name,
+                dataset.observer,
+                dataset.experiment_id,
+            )
 
             # before resetting ms_dict, copy subset to caltable dictionary
             if options.caltables:
                 caltable_dict = {}
-                caltable_dict['ANTENNA'] = ms_dict['ANTENNA']
-                caltable_dict['OBSERVATION'] = ms_dict['OBSERVATION']
+                caltable_dict["ANTENNA"] = ms_dict["ANTENNA"]
+                caltable_dict["OBSERVATION"] = ms_dict["OBSERVATION"]
 
             print("Writing static meta data...")
             ms_extra.write_dict(ms_dict, ms_name, verbose=options.verbose)
@@ -598,8 +768,19 @@ def main():
         result_queue = multiprocessing.Queue()
         writer_process = multiprocessing.Process(
             target=ms_async.ms_writer_process,
-            args=(work_queue, result_queue, options, dataset.ants, cp_info, ms_name,
-                  raw_vis_data, raw_weight_data, raw_flag_data, ms_start_row))
+            args=(
+                work_queue,
+                result_queue,
+                options,
+                dataset.ants,
+                cp_info,
+                ms_name,
+                raw_vis_data,
+                raw_weight_data,
+                raw_flag_data,
+                ms_start_row,
+            ),
+        )
         writer_process.start()
 
         try:
@@ -607,14 +788,14 @@ def main():
             for scan_ind, scan_state, target in dataset.scans():
                 s = time.time()
                 scan_len = dataset.shape[0]
-                prefix = f'scan {scan_ind:3d} ({scan_len:4d} samples)'
-                if scan_state not in {'track', 'scan'}:
+                prefix = f"scan {scan_ind:3d} ({scan_len:4d} samples)"
+                if scan_state not in {"track", "scan"}:
                     if options.verbose:
                         print(f"{prefix} skipped '{scan_state}' - not a track or scan")
                     continue
                 if scan_len < 2:
                     if options.verbose:
-                        print(f'{prefix} skipped - too short')
+                        print(f"{prefix} skipped - too short")
                     continue
                 print(f"{prefix} loaded. Target: '{target.name}'. Writing to disk...")
 
@@ -634,12 +815,15 @@ def main():
                     field_centers.append((ra, dec))
                     field_times.append(field_time.to_mjd() * 60 * 60 * 24)
                     if options.verbose:
-                        print(f"Added new field {len(field_names) - 1}: '{target.name}' {ra} {dec}")
+                        print(
+                            f"Added new field {len(field_names) - 1}: '{target.name}' {ra} {dec}"
+                        )
                 field_id = field_names.index(target.name)
 
                 # Determine the observation tag for this scan
-                obs_tag = ','.join(tag_to_intent[tag]
-                                   for tag in target.tags if tag in tag_to_intent)
+                obs_tag = ",".join(
+                    tag_to_intent[tag] for tag in target.tags if tag in tag_to_intent
+                )
 
                 # add tag to obs_modes list
                 if obs_tag and obs_tag not in obs_modes:
@@ -662,8 +846,13 @@ def main():
                     # load all visibility, weight and flag data
                     # for this scan's timestamps.
                     # Ordered (ntime, nchan, nbl*npol)
-                    load(dataset, np.s_[ltime:utime, :, :],
-                         scan_vis_data, scan_weight_data, scan_flag_data)
+                    load(
+                        dataset,
+                        np.s_[ltime:utime, :, :],
+                        scan_vis_data,
+                        scan_weight_data,
+                        scan_flag_data,
+                    )
 
                     # This are updated as we go to point to the current storage
                     vis_data = scan_vis_data
@@ -675,10 +864,18 @@ def main():
                     # Overwrite the input visibilities with averaged visibilities,
                     # flags, weights, timestamps, channel freqs
                     if average_data:
-                        vis_data, weight_data, flag_data, out_utc, out_freqs = \
-                            averager.average_visibilities(vis_data, weight_data, flag_data,
-                                                          out_utc, out_freqs, timeav=dump_av,
-                                                          chanav=chan_av, flagav=options.flagav)
+                        vis_data, weight_data, flag_data, out_utc, out_freqs = (
+                            averager.average_visibilities(
+                                vis_data,
+                                weight_data,
+                                flag_data,
+                                out_utc,
+                                out_freqs,
+                                timeav=dump_av,
+                                chanav=chan_av,
+                                flagav=options.flagav,
+                            )
+                        )
 
                         # Infer new time dimension from averaged data
                         tdiff = vis_data.shape[0]
@@ -686,8 +883,14 @@ def main():
                     # Select correlator products and permute axes
                     cp_index = cp_info.cp_index.reshape((nbl, npol))
                     vis_data, weight_data, flag_data = permute_baselines(
-                        vis_data, weight_data, flag_data, cp_index,
-                        ms_vis_data[slot], ms_weight_data[slot], ms_flag_data[slot])
+                        vis_data,
+                        weight_data,
+                        flag_data,
+                        cp_index,
+                        ms_vis_data[slot],
+                        ms_weight_data[slot],
+                        ms_flag_data[slot],
+                    )
 
                     # Increment the number of averaged dumps
                     ntime_av += tdiff
@@ -699,9 +902,17 @@ def main():
                     except queue.Empty:
                         pass
 
-                    work_queue.put(ms_async.QueueItem(
-                        slot=slot, target=target, time_utc=out_utc, dump_time_width=dump_time_width,
-                        field_id=field_id, state_id=state_id, scan_itr=scan_itr))
+                    work_queue.put(
+                        ms_async.QueueItem(
+                            slot=slot,
+                            target=target,
+                            time_utc=out_utc,
+                            dump_time_width=dump_time_width,
+                            field_id=field_id,
+                            state_id=state_id,
+                            scan_itr=scan_itr,
+                        )
+                    )
                     slot += 1
                     if slot == SLOTS:
                         slot = 0
@@ -714,13 +925,17 @@ def main():
                 s1 = time.time() - s
 
                 if average_data and utc_seconds.shape != ntime_av:
-                    print(f'Averaged {np.shape(utc_seconds)[0]} x {dataset.dump_period} second dumps '
-                          f'to {ntime_av} x {dump_time_width} second dumps')
+                    print(
+                        f"Averaged {np.shape(utc_seconds)[0]} x {dataset.dump_period} second dumps "
+                        f"to {ntime_av} x {dump_time_width} second dumps"
+                    )
 
                 scan_size_mb = float(scan_size) / (1024**2)
 
-                print(f'Wrote scan data ({scan_size_mb:.3f} MiB) '
-                      f'in {s1:.3f} s ({scan_size_mb / s1:.3f} MiBps)\n')
+                print(
+                    f"Wrote scan data ({scan_size_mb:.3f} MiB) "
+                    f"in {s1:.3f} s ({scan_size_mb / s1:.3f} MiBps)\n"
+                )
 
                 scan_itr += 1
                 total_size += scan_size
@@ -742,27 +957,35 @@ def main():
             raise writer_exc
 
         if total_size == 0:
-            raise RuntimeError("No usable data found in MVF dataset "
-                               "(pick another reference antenna, maybe?)")
+            raise RuntimeError(
+                "No usable data found in MVF dataset "
+                "(pick another reference antenna, maybe?)"
+            )
 
         # Remove spaces from source names, unless otherwise specified
-        field_names = [f.replace(' ', '') for f in field_names] \
-            if not options.keep_spaces else field_names
+        field_names = (
+            [f.replace(" ", "") for f in field_names]
+            if not options.keep_spaces
+            else field_names
+        )
 
         ms_dict = {}
-        ms_dict['SPECTRAL_WINDOW'] = ms_extra.populate_spectral_window_dict(
-            out_freqs, channel_freq_width * np.ones(len(out_freqs)))
-        ms_dict['FIELD'] = ms_extra.populate_field_dict(
-            field_centers, field_times, field_names)
-        ms_dict['STATE'] = ms_extra.populate_state_dict(obs_modes)
-        ms_dict['SOURCE'] = ms_extra.populate_source_dict(
-            field_centers, field_times, field_names)
+        ms_dict["SPECTRAL_WINDOW"] = ms_extra.populate_spectral_window_dict(
+            out_freqs, channel_freq_width * np.ones(len(out_freqs))
+        )
+        ms_dict["FIELD"] = ms_extra.populate_field_dict(
+            field_centers, field_times, field_names
+        )
+        ms_dict["STATE"] = ms_extra.populate_state_dict(obs_modes)
+        ms_dict["SOURCE"] = ms_extra.populate_source_dict(
+            field_centers, field_times, field_names
+        )
 
         print("\nWriting dynamic fields to disk....\n")
         # Finally we write the MS as per our created dicts
         ms_extra.write_dict(ms_dict, ms_name, verbose=options.verbose)
         if options.tar:
-            tar = tarfile.open(f'{ms_name}.tar', 'w')
+            tar = tarfile.open(f"{ms_name}.tar", "w")
             tar.add(ms_name, arcname=os.path.basename(ms_name))
             tar.close()
 
@@ -776,40 +999,46 @@ def main():
 
         if options.caltables:
             # copy extra subtable dictionary values necessary for caltable
-            caltable_dict['SPECTRAL_WINDOW'] = ms_dict['SPECTRAL_WINDOW']
-            caltable_dict['FIELD'] = ms_dict['FIELD']
+            caltable_dict["SPECTRAL_WINDOW"] = ms_dict["SPECTRAL_WINDOW"]
+            caltable_dict["FIELD"] = ms_dict["FIELD"]
 
-            solution_types = ['G', 'B', 'K']
-            ms_soltype_lookup = {'G': 'G Jones', 'B': 'B Jones', 'K': 'K Jones'}
+            solution_types = ["G", "B", "K"]
+            ms_soltype_lookup = {"G": "G Jones", "B": "B Jones", "K": "K Jones"}
 
             print("\nWriting calibration solution tables to disk....")
-            if 'TelescopeState' not in first_dataset.file.keys():
-                print(" No TelescopeState in first dataset. Can't create solution tables.\n")
+            if "TelescopeState" not in first_dataset.file.keys():
+                print(
+                    " No TelescopeState in first dataset. Can't create solution tables.\n"
+                )
             else:
                 # first get solution antenna ordering
                 #   newer files have the cal antlist as a sensor
-                if 'cal_antlist' in first_dataset.file['TelescopeState'].keys():
-                    a0 = first_dataset.file['TelescopeState/cal_antlist'][()]
+                if "cal_antlist" in first_dataset.file["TelescopeState"].keys():
+                    a0 = first_dataset.file["TelescopeState/cal_antlist"][()]
                     antlist = telstate_decode(a0[0][1])
                 #   older files have the cal antlist as an attribute
-                elif 'cal_antlist' in first_dataset.file['TelescopeState'].attrs.keys():
-                    antlist = np.safe_eval(first_dataset.file['TelescopeState'].attrs['cal_antlist'])
+                elif "cal_antlist" in first_dataset.file["TelescopeState"].attrs.keys():
+                    antlist = np.safe_eval(
+                        first_dataset.file["TelescopeState"].attrs["cal_antlist"]
+                    )
                 else:
-                    print(" No calibration antenna ordering in first dataset. "
-                          "Can't create solution tables.\n")
+                    print(
+                        " No calibration antenna ordering in first dataset. "
+                        "Can't create solution tables.\n"
+                    )
                     continue
                 antlist_indices = list(range(len(antlist)))
 
                 # for each solution type in the file, create a table
                 for sol in solution_types:
-                    caltable_name = f'{basename}.{sol}'
-                    sol_name = f'cal_product_{sol}'
+                    caltable_name = f"{basename}.{sol}"
+                    sol_name = f"cal_product_{sol}"
 
-                    if sol_name in first_dataset.file['TelescopeState'].keys():
-                        print(f' - creating {sol} solution table: {caltable_name}\n')
+                    if sol_name in first_dataset.file["TelescopeState"].keys():
+                        print(f" - creating {sol} solution table: {caltable_name}\n")
 
                         # get solution values from the file
-                        solutions = first_dataset.file['TelescopeState'][sol_name][()]
+                        solutions = first_dataset.file["TelescopeState"][sol_name][()]
                         soltimes, solvals = [], []
                         for t, s in solutions:
                             soltimes.append(t)
@@ -817,8 +1046,12 @@ def main():
                         solvals = np.array(solvals)
 
                         # convert averaged UTC timestamps to MJD seconds.
-                        sol_mjd = np.array([katpoint.Timestamp(time_utc).to_mjd() * 24 * 60 * 60
-                                            for time_utc in soltimes])
+                        sol_mjd = np.array(
+                            [
+                                katpoint.Timestamp(time_utc).to_mjd() * 24 * 60 * 60
+                                for time_utc in soltimes
+                            ]
+                        )
 
                         # determine solution characteristics
                         if len(solvals.shape) == 4:
@@ -829,32 +1062,48 @@ def main():
                             solvals = solvals.reshape((ntimes, nchans, npols, nants))
 
                         # create calibration solution measurement set
-                        caltable_desc = ms_extra.caltable_desc_float \
-                            if sol == 'K' else ms_extra.caltable_desc_complex
-                        caltable = ms_extra.open_table(caltable_name, tabledesc=caltable_desc)
+                        caltable_desc = (
+                            ms_extra.caltable_desc_float
+                            if sol == "K"
+                            else ms_extra.caltable_desc_complex
+                        )
+                        caltable = ms_extra.open_table(
+                            caltable_name, tabledesc=caltable_desc
+                        )
 
                         # add other keywords for main table
-                        if sol == 'K':
-                            caltable.putkeyword('ParType', 'Float')
+                        if sol == "K":
+                            caltable.putkeyword("ParType", "Float")
                         else:
-                            caltable.putkeyword('ParType', 'Complex')
-                        caltable.putkeyword('MSName', ms_name)
-                        caltable.putkeyword('VisCal', ms_soltype_lookup[sol])
-                        caltable.putkeyword('PolBasis', 'unknown')
+                            caltable.putkeyword("ParType", "Complex")
+                        caltable.putkeyword("MSName", ms_name)
+                        caltable.putkeyword("VisCal", ms_soltype_lookup[sol])
+                        caltable.putkeyword("PolBasis", "unknown")
                         # add necessary units
-                        caltable.putcolkeywords('TIME', {'MEASINFO': {'Ref': 'UTC', 'type': 'epoch'},
-                                                         'QuantumUnits': ['s']})
-                        caltable.putcolkeywords('INTERVAL', {'QuantumUnits': ['s']})
+                        caltable.putcolkeywords(
+                            "TIME",
+                            {
+                                "MEASINFO": {"Ref": "UTC", "type": "epoch"},
+                                "QuantumUnits": ["s"],
+                            },
+                        )
+                        caltable.putcolkeywords("INTERVAL", {"QuantumUnits": ["s"]})
                         # specify that this is a calibration table
-                        caltable.putinfo({'readme': '', 'subType': ms_soltype_lookup[sol],
-                                          'type': 'Calibration'})
+                        caltable.putinfo(
+                            {
+                                "readme": "",
+                                "subType": ms_soltype_lookup[sol],
+                                "type": "Calibration",
+                            }
+                        )
 
                         # get the solution data to write to the main table
-                        solutions_to_write = solvals.transpose(0, 3, 1, 2).reshape((
-                            ntimes * nants, nchans, npols))
+                        solutions_to_write = solvals.transpose(0, 3, 1, 2).reshape(
+                            (ntimes * nants, nchans, npols)
+                        )
 
                         # MS's store delays in nanoseconds
-                        if sol == 'K':
+                        if sol == "K":
                             solutions_to_write = 1e9 * solutions_to_write
 
                         times_to_write = np.repeat(sol_mjd, nants)
@@ -863,12 +1112,26 @@ def main():
                         scans_to_write = np.repeat(list(range(len(sol_mjd))), nants)
                         # write the main table
                         main_cal_dict = ms_extra.populate_caltable_main_dict(
-                            times_to_write, solutions_to_write, antennas_to_write, scans_to_write)
-                        ms_extra.write_rows(caltable, main_cal_dict, verbose=options.verbose)
+                            times_to_write,
+                            solutions_to_write,
+                            antennas_to_write,
+                            scans_to_write,
+                        )
+                        ms_extra.write_rows(
+                            caltable, main_cal_dict, verbose=options.verbose
+                        )
 
                         # create and write subtables
-                        subtables = ['OBSERVATION', 'ANTENNA', 'FIELD', 'SPECTRAL_WINDOW', 'HISTORY']
-                        subtable_key = [(os.path.join(caltable.name(), st)) for st in subtables]
+                        subtables = [
+                            "OBSERVATION",
+                            "ANTENNA",
+                            "FIELD",
+                            "SPECTRAL_WINDOW",
+                            "HISTORY",
+                        ]
+                        subtable_key = [
+                            (os.path.join(caltable.name(), st)) for st in subtables
+                        ]
 
                         # Add subtable keywords and create subtables
                         # ------------------------------------------------------------------------------
@@ -884,25 +1147,32 @@ def main():
                         #   this works to plot the data casapy, but the solutions still can't be
                         #   applied in casapy...
                         for subtable, subtable_location in zip(subtables, subtable_key):
-                            main_subtable = ms_extra.open_table(os.path.join(main_table.name(),
-                                                                             subtable))
+                            main_subtable = ms_extra.open_table(
+                                os.path.join(main_table.name(), subtable)
+                            )
                             main_subtable.copy(subtable_location, deep=True)
-                            caltable.putkeyword(subtable, f'Table: {subtable_location}')
-                            if subtable == 'ANTENNA':
-                                caltable.putkeyword('NAME', antlist)
-                                caltable.putkeyword('STATION', antlist)
-                        if sol != 'B':
-                            spw_table = ms_extra.open_table(os.path.join(caltable.name(),
-                                                                         'SPECTRAL_WINDOW'))
+                            caltable.putkeyword(subtable, f"Table: {subtable_location}")
+                            if subtable == "ANTENNA":
+                                caltable.putkeyword("NAME", antlist)
+                                caltable.putkeyword("STATION", antlist)
+                        if sol != "B":
+                            spw_table = ms_extra.open_table(
+                                os.path.join(caltable.name(), "SPECTRAL_WINDOW")
+                            )
                             spw_table.removerows(spw_table.rownumbers())
                             cen_index = len(out_freqs) // 2
                             # the delay values in the cal pipeline are calculated relative to frequency 0
-                            ref_freq = 0.0 if sol == 'K' else None
-                            spw_dict = {'SPECTRAL_WINDOW':
-                                        ms_extra.populate_spectral_window_dict(np.atleast_1d(out_freqs[cen_index]),
-                                                                               np.atleast_1d(channel_freq_width),
-                                                                               ref_freq=ref_freq)}
-                            ms_extra.write_dict(spw_dict, caltable.name(), verbose=options.verbose)
+                            ref_freq = 0.0 if sol == "K" else None
+                            spw_dict = {
+                                "SPECTRAL_WINDOW": ms_extra.populate_spectral_window_dict(
+                                    np.atleast_1d(out_freqs[cen_index]),
+                                    np.atleast_1d(channel_freq_width),
+                                    ref_freq=ref_freq,
+                                )
+                            }
+                            ms_extra.write_dict(
+                                spw_dict, caltable.name(), verbose=options.verbose
+                            )
 
                         # done with this caltable
                         caltable.flush()
@@ -912,5 +1182,5 @@ def main():
         # done writing main table
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

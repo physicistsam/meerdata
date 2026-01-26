@@ -1,8 +1,6 @@
-import os
-from pathlib import Path
 import stat
+from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from meerdata.cli import cli
@@ -27,9 +25,7 @@ def test_pull_includes_venv_source(tmp_path: Path, monkeypatch):
     venv = make_fake_venv(tmp_path)
 
     # Use a fake RDB link (parser only extracts CBID and token)
-    rdb_link = (
-        "https://archive-gw-1.kat.ac.za/1234567890/1234567890_sdp_l0.full.rdb?token=abcd"
-    )
+    rdb_link = "https://archive-gw-1.kat.ac.za/1234567890/1234567890_sdp_l0.full.rdb?token=abcd"
 
     # Run the command in tmp_path so sbatch/logs are created there
     monkeypatch.chdir(tmp_path)
@@ -132,7 +128,9 @@ def test_pull_no_cleanup(tmp_path: Path, monkeypatch):
 
     cbid = "1111111111"
     cleanup_script = tmp_path / "sbatch" / f"cleanup-{cbid}.sbatch"
-    assert not cleanup_script.exists(), "cleanup script should not be created when --no-cleanup is used"
+    assert not cleanup_script.exists(), (
+        "cleanup script should not be created when --no-cleanup is used"
+    )
 
 
 def test_pull_creates_cleanup(tmp_path: Path, monkeypatch):
@@ -166,7 +164,9 @@ def test_pull_creates_cleanup(tmp_path: Path, monkeypatch):
 
     cbid = "3333333333"
     cleanup_script = tmp_path / "sbatch" / f"cleanup-{cbid}.sbatch"
-    assert cleanup_script.exists(), "cleanup script should be created when --no-cleanup is not used"
+    assert cleanup_script.exists(), (
+        "cleanup script should be created when --no-cleanup is not used"
+    )
 
 
 def test_pull_venv_validation_errors(tmp_path: Path, monkeypatch):
