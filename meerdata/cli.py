@@ -383,7 +383,7 @@ MS={ms_path}
 echo $localRDB
 echo $MS
 
-python {mvftoms_script} -o $MS -v -f $localRDB"""
+{mvftoms_script} -o $MS -v -f $localRDB"""
 
         scripts["ms"] = _create_sbatch_script(
             "ext_MS",
