@@ -12,9 +12,9 @@ from pathlib import Path
 
 # Ilifu default paths
 VENV_DEFAULT = Path("/idia/projects/meerklass/virtualenv/meerklass")
-DATA_FOLDER_DEFAULT = Path("/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw")
-CONTEXT_FOLDER_DEFAULT = Path(
-    "/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/sanity_checks"
+DATA_FOLDER_DEFAULT = Path("/idia/projects/meerklass/MEERKLASS-1/raw_data")
+SANITY_CHECK_FOLDER_DEFAULT = Path(
+    "/idia/projects/meerklass/MEERKLASS-1/museek/sanity_checks"
 )
 
 
