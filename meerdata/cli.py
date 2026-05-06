@@ -698,7 +698,7 @@ def pull(
 @dry_run_option
 def check(
     rdb_link,
-    context_folder,
+    sanity_check_folder,
     venv,
     mail_user,
     mail_type,
@@ -709,14 +709,14 @@ def check(
     cbid, token = _extract_cbid_and_token_from_rdb_link(rdb_link)
 
     # Check that the context folder exists, creating the directory if needed
-    (context_folder / f"{cbid}").mkdir(parents=True, exist_ok=True)
+    (sanity_check_folder / f"{cbid}").mkdir(parents=True, exist_ok=True)
 
     # Check that path to slurm log file exists. If not create it.
     Path("./logs").mkdir(parents=True, exist_ok=True)
     Path("./sbatch").mkdir(parents=True, exist_ok=True)
 
     click.echo(f"Running sanity check for CBID: {cbid}")
-    click.echo(f"Context folder: {context_folder}")
+    click.echo(f"Sanity check folder: {sanity_check_folder}")
 
     # Create and submit the sanity check job
     steps = ["sanity-check"]
@@ -728,7 +728,7 @@ def check(
         None,
         None,
         token=token,
-        context_folder=context_folder,
+        context_folder=sanity_check_folder,
         venv_path=venv,
         mail_user=mail_user,
         mail_type=mail_type,
