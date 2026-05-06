@@ -5,8 +5,8 @@ from pathlib import Path
 import click
 
 from meerdata.ilifu import (
-    CONTEXT_FOLDER_DEFAULT,
     DATA_FOLDER_DEFAULT,
+    SANITY_CHECK_FOLDER_DEFAULT,
     VENV_DEFAULT,
     detect_ilifu,
 )
@@ -22,34 +22,34 @@ PATH_DW = click.Path(
 )
 
 
-def _validate_context_folder(ctx, param, value):
-    """Validate or infer the ilifu context folder path.
+def _validate_sanity_check_folder(ctx, param, value):
+    """Validate or infer the ilifu sanity check folder path.
 
     If not provided, try Ilifu detection and default; otherwise require the
-    caller to provide an explicit `--context-folder` path.
+    caller to provide an explicit `--sanity-check-folder` path.
     """
     if value is None:
         is_ilifu, markers = detect_ilifu()
         if is_ilifu:
-            if CONTEXT_FOLDER_DEFAULT.exists():
+            if SANITY_CHECK_FOLDER_DEFAULT.exists():
                 click.echo(
-                    f"WARNING: context folder not provided, "
-                    "but Ilifu context path found. "
-                    f'Using "{CONTEXT_FOLDER_DEFAULT}"'
+                    f"WARNING: sanity check folder not provided, "
+                    "but Ilifu sanity check path found. "
+                    f'Using "{SANITY_CHECK_FOLDER_DEFAULT}"'
                 )
-                return CONTEXT_FOLDER_DEFAULT
+                return SANITY_CHECK_FOLDER_DEFAULT
             raise click.ClickException(
-                "You appear to be on Ilifu but the default context folder "
-                f'("{CONTEXT_FOLDER_DEFAULT}") does not exist. '
-                "Please supply --context-folder."
+                "You appear to be on Ilifu but the default sanity check folder "
+                f'("{SANITY_CHECK_FOLDER_DEFAULT}") does not exist. '
+                "Please supply --sanity-check-folder."
             )
         raise click.ClickException(
-            "No context folder specified and Ilifu not detected. "
-            "Please supply --context-folder path."
+            "No sanity check folder specified and Ilifu not detected. "
+            "Please supply --sanity-check-folder path."
         )
 
     if not value.exists():
-        raise click.ClickException(f"Context folder {value} does not exist.")
+        raise click.ClickException(f"Sanity check folder {value} does not exist.")
     if not value.is_dir():
         raise click.ClickException(f"{value} is not a directory.")
     return value
@@ -103,7 +103,7 @@ data_folder_option = click.option(
     callback=_validate_data_folder,
     help=(
         "Directory for storing the extracted data. If not provided, the Ilifu default "
-        "('/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw') will be used "
+        f'("{DATA_FOLDER_DEFAULT}") will be used '
         "when available (a warning will be emitted)."
     ),
 )
@@ -174,16 +174,30 @@ def _validate_venv(ctx, param, value):
 
 venv_option = click.option(
     "--venv",
-    type=click.Path(exists=False, resolve_path=True, path_type=Path),
+    type=click.Path(exists=True, resolve_path=True, path_type=Path),
     default=None,
     show_default=False,
     callback=_validate_venv,
     help=(
         "Path to the Python virtual environment to use. "
         "If not provided, the Ilifu default "
-        '"/idia/projects/meerklass/virtualenv/meerklass" will be used when available. '
+        f'("{VENV_DEFAULT}") will be used when available. '
         "The specified venv will be activated in generated sbatch scripts "
         "via `source {venv}/bin/activate`."
+    ),
+)
+
+
+full_tmp_folder_option = click.option(
+    "--full-tmp-folder",
+    type=click.Path(exists=True, resolve_path=True, path_type=Path),
+    default=None,
+    show_default=False,
+    help=(
+        "Directory for storing temporary full raw data during download. "
+        "If not provided, defaults to data_folder/full_tmp/cbid. "
+        "This directory will be cleaned up after extraction unless "
+        "--no-cleanup is specified."
     ),
 )
 
@@ -262,7 +276,7 @@ def _create_data_scripts(
     steps,
     cbid,
     dest,
-    full_dest,
+    full_tmp_dest,
     ms_path,
     local_rdb,
     rdb_link=None,
@@ -280,7 +294,7 @@ def _create_data_scripts(
                ('download', 'auto', 'ms', 'cleanup', 'sanity-check')
         cbid: Block ID
         dest: Destination directory for extracted data
-        full_dest: Full destination directory (for cleanup)
+        full_tmp_dest: Full temporary destination directory (for cleanup)
         ms_path: Path for measurement set output
         local_rdb: Path to local RDB file
         rdb_link: Optional RDB link for download (required if 'download' in steps)
@@ -312,7 +326,7 @@ module load rclone
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 RDB_LINK="{rdb_link}"
-fulldest={full_dest}
+fulldest={full_tmp_dest}
 
 which rclone
 echo $RDB_LINK
@@ -398,7 +412,7 @@ echo $MS
 
     # Cleanup script
     if "cleanup" in steps:
-        cleanup_body = f"rm -r {full_dest}"
+        cleanup_body = f"rm -r {full_tmp_dest}"
         scripts["cleanup"] = _create_sbatch_script(
             "cleanup",
             cbid,
@@ -587,6 +601,7 @@ def cli():
 @dry_run_option
 @use_patched_mvftoms_option
 @venv_option
+@full_tmp_folder_option
 @click.option(
     "--no-cleanup",
     is_flag=True,
@@ -601,25 +616,32 @@ def pull(
     dry_run,
     use_patched_mvftoms,
     venv,
+    full_tmp_folder,
     no_cleanup,
 ):
     """Download a data block."""
     cbid, token = _extract_cbid_and_token_from_rdb_link(rdb_link)
 
-    # Set up directories
+    # Set up directories. Each download is saved to dest/<cbid> with 3 subdirectoies
+    # inside: <cbid>, <cbid>-sdp-l0, and <cbid>-sdp-l1-flags. The local RDB file lives
+    # in the first subdirectory. MS file lives inside the main directory.
     dest = data_folder / cbid
-    full_dest = Path(str(data_folder).replace("/raw", "/raw_full")) / cbid
+    # Compute full_tmp_dest: use provided folder or default to data_folder/full_tmp/cbid
+    full_tmp_dest = (
+        full_tmp_folder if full_tmp_folder else data_folder / "full_tmp" / cbid
+    )
     ms_path = dest / f"{cbid}_sdp_l0.ms"
-    local_rdb = full_dest / cbid / f"{cbid}_sdp_l0.full.rdb"
+    local_rdb = full_tmp_dest / cbid / f"{cbid}_sdp_l0.full.rdb"
 
-    # Create directories
+    # Create/check that directories exist
     Path("./logs").mkdir(parents=True, exist_ok=True)
     dest.mkdir(parents=True, exist_ok=True)
-    full_dest.mkdir(parents=True, exist_ok=True)
+    full_tmp_dest.mkdir(parents=True, exist_ok=True)
 
     if use_patched_mvftoms:
         click.echo(
-            "WARNING: Using patched mvftoms_otf_patch.py; this patched version is deprecated and will be removed in the next release."
+            "WARNING: Using patched mvftoms_otf_patch.py; this patched version is "
+            "deprecated and will be removed in the next release."
         )
 
     click.echo(f"Pulling {correlation} correlation data for CBID: {cbid}")
@@ -639,7 +661,7 @@ def pull(
         steps,
         cbid,
         dest,
-        full_dest,
+        full_tmp_dest,
         ms_path,
         local_rdb,
         rdb_link,
@@ -659,14 +681,14 @@ def pull(
 @cli.command()
 @rdb_link_option
 @click.option(
-    "--context-folder",
+    "--sanity-check-folder",
     type=PATH_DW,
     default=None,
     show_default=False,
-    callback=_validate_context_folder,
+    callback=_validate_sanity_check_folder,
     help=(
         "Context folder to save sanity check results. If not provided, the Ilifu default "
-        "('/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/sanity_checks') will be used "
+        f'("{SANITY_CHECK_FOLDER_DEFAULT}") will be used '
         "when available (a warning will be emitted)."
     ),
 )
@@ -729,23 +751,23 @@ def check(
     help="Block number(s) to verify. Can be specified multiple times.",
 )
 @click.option(
-    "--context-folder",
+    "--data-folder",
     type=PATH_DW,
     default=None,
     show_default=False,
     callback=_validate_data_folder,
     help=(
         "Context folder containing block directories. If not provided, the Ilifu default "
-        "('/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw') will be used "
+        f'("{DATA_FOLDER_DEFAULT}") will be used '
         "when available (a warning will be emitted)."
     ),
 )
-def verify(block_number, context_folder):
+def verify(block_number, data_folder):
     """Verify existent and disk usage of data blocks."""
-    click.echo(f"Verifying {len(block_number)} block(s) in {context_folder}")
+    click.echo(f"Verifying {len(block_number)} block(s) in {data_folder}")
     summary = []
     for bn in block_number:
-        block_dir = context_folder / bn
+        block_dir = data_folder / bn
         if block_dir.exists() and block_dir.is_dir():
             # Get disk usage in GB
             try:
