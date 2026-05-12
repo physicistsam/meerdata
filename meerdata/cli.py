@@ -96,6 +96,7 @@ dry_run_option = click.option(
     help="Create sbatch scripts but do not submit them and exit the program",
 )
 data_folder_option = click.option(
+    "-d",
     "--data-folder",
     type=PATH_DW,
     default=None,
@@ -173,6 +174,7 @@ def _validate_venv(ctx, param, value):
 
 
 venv_option = click.option(
+    "-v",
     "--venv",
     type=click.Path(exists=True, resolve_path=True, path_type=Path),
     default=None,
@@ -330,7 +332,7 @@ fulldest={full_tmp_dest}
 
 which rclone
 echo $RDB_LINK
-echo $dest
+echo $fulldest
 
 mvf_download.py --workers=$SLURM_CPUS_PER_TASK "$RDB_LINK" $fulldest \\
     --stats=15m --stats-one-line || /opt/slurm/bin/scontrol requeue $SLURM_JOB_ID"""
@@ -338,9 +340,9 @@ mvf_download.py --workers=$SLURM_CPUS_PER_TASK "$RDB_LINK" $fulldest \\
         scripts["download"] = _create_sbatch_script(
             "download_MVF",
             cbid,
-            8,
+            16,
             "16GB",
-            "48:00:00",
+            "10:00:00",
             script_body=download_body,
             mail_user=mail_user,
             mail_type=mail_type,
@@ -364,9 +366,9 @@ mvf_copy.py --corrprods=auto --workers=$SLURM_CPUS_PER_TASK $localRDB $dest"""
         scripts["auto"] = _create_sbatch_script(
             "ext_autos",
             cbid,
-            30,
+            24,
             "50GB",
-            "00:45:00",
+            "00:30:00",
             script_body=auto_body,
             mail_user=mail_user,
             mail_type=mail_type,
@@ -803,6 +805,7 @@ def verify(block_number, data_folder):
 
 @cli.command()
 @click.option(
+    "-r",
     "--rdb-file",
     required=True,
     type=click.Path(exists=True, resolve_path=True, path_type=Path),
