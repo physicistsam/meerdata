@@ -27,13 +27,14 @@ dependencies = [
     "python-casacore",
     "katdal",
     "katpoint",
-    "katdal",
-    "setuptools==81.0.0",  # https://github.com/ska-sa/katdal/issues/379
     "museek @ git+https://github.com/meerklass/museek.git",
 ]
 
-[project.optional-dependencies]
-test = ["pytest"]
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
 
 [project.urls]
 Homepage = "https://github.com/meerklass/meerdata"
