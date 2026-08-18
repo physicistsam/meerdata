@@ -132,6 +132,7 @@ mvftoms.py -o $MS -v -f $localRDB"""
                 f"--InPlugin-token={token}" if token is not None else "",
                 data_folder_arg,
                 f"--InPlugin-context-folder={context_folder}",
+                "--InPlugin-load-visibilities-auto=False",
                 "museek.config.sanity_check",
             ]
         )
