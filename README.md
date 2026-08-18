@@ -11,7 +11,7 @@ A make up word from Afrikaans word "meer" meaning "more" and an English word dat
 
 * Access to [SARAO archive](https://archive.sarao.ac.za/). See [Obataining RDB Link.](#obtaining-rdb-link)
 * Python >= 3.12
-* `pip` (katdal, museek and other dependencies are installed automatically when installing this package with `pip`)
+* `pip` (museek and other dependencies are installed automatically when installing this package with `pip`)
 
 ## Installation
 
@@ -80,12 +80,53 @@ meerdata --help
 
 The tool provides four main commands: `pull`, `extract`, `check`, and `verify`.
 
+## Site Configuration
+
+`meerdata` needs to know where it's running: default data/venv/sanity-check-folder paths, and whether to submit jobs to SLURM or run them directly (local mode). This is called the "site", and is resolved once per invocation using the first of:
+
+1. `--site-config PATH` — a custom site config YAML file, for HPC systems not shipped with the package.
+2. `--site NAME` — an explicit, shipped site name (currently `ilifu` or `local`).
+3. The `MEERDATA_SITE` environment variable, set to a shipped site name.
+4. Auto-detection — the same "just works on Ilifu" experience as before, using multiple markers (SLURM cluster name, hostname, known mount points) to recognize Ilifu without any flags.
+5. Falling back to `local` if nothing above matched — no SLURM, no default paths, so `--data-folder`/`--venv`/`--sanity-check-folder` must be supplied explicitly.
+
+```bash
+# Default: auto-detects Ilifu, unchanged zero-flag behavior
+meerdata pull -r "RDB_LINK"
+
+# Force a specific known site
+meerdata --site local pull -r "RDB_LINK" --data-folder ./data --venv ./venv
+
+# Same, via environment variable (handy for a shell profile / job script)
+MEERDATA_SITE=local meerdata pull -r "RDB_LINK" --data-folder ./data --venv ./venv
+
+# Point at a custom site config for an HPC not shipped with the package
+meerdata --site-config /path/to/my_cluster.yaml pull -r "RDB_LINK"
+```
+
+In `local` mode, `pull`/`check`/`extract` run each processing step (download, extraction, sanity check, cleanup) directly as a foreground subprocess instead of generating and submitting `.sbatch` scripts — no SLURM installation is required.
+
+A SLURM site's config (see [`meerdata/configs/ilifu.yaml`](src/meerdata/configs/ilifu.yaml) for a full example) sets `paths:` and a `slurm:` block. `slurm.options` and each entry in `slurm.resources` are lists of raw `--flag=value` sbatch directives — any SBATCH-compatible option is allowed, not just a fixed set of fields:
+
+```yaml
+slurm:
+  modules: ["rclone"]           # `module load` lines for the download step
+  scontrol_path: "scontrol"     # used to requeue a failed download
+  options:                      # applied to every generated job
+    - "--account=my-account"
+    - "--partition=batch"
+  resources:                    # per-step options, override `options` above
+    download:
+      - "--cpus-per-task=16"
+      - "--mem=16GB"
+      - "--time=10:00:00"
+    # ... auto, ms, cleanup, sanity-check
+```
 
 ### Pull Command - Download Data
 
 ```bash
 meerdata pull -r "RDB_LINK"
-# or: python meerdata.py pull -r "RDB_LINK"
 ```
 
 **Options:**
@@ -95,9 +136,10 @@ meerdata pull -r "RDB_LINK"
   * `auto`: autocorrelations only, i.e. single dish IM data
   * `cross`: cross-correlations (measurement set), i.e. OTF data
   * `all`: both autocorrelations and cross-correlations
-* `--data-folder`: Directory for storing data (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`) will be used when available (a warning will be emitted).
-* `--venv`: Path to Python virtual environment to use (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/virtualenv/meerklass`) will be used when available (a warning will be emitted). The specified venv will be activated in generated sbatch scripts via `source {venv}/bin/activate`.
+* `--data-folder`: Directory for storing data (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted). See [Site Configuration](#site-configuration).
+* `--venv`: Path to a Python virtual environment or conda/mamba environment to use (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted). A venv/virtualenv is activated via `source {venv}/bin/activate`; a conda/mamba environment (detected by the presence of `conda-meta/`) is activated via `conda activate {venv}` instead — this requires the `conda` executable to be on `$PATH` in the job's shell (e.g. via a site's `slurm.modules`, or an already-loaded shell environment).
 * `--no-cleanup`: Skip the full raw data cleanup step at the end (useful for debugging or preserving raw files).
+* `-s, --slurm-override`: Override a SLURM sbatch directive for this run, e.g. `--slurm-override "--mem=64GB"`. Can be repeated. Ignored (with a warning) in local mode.
 
 **Examples:**
 
@@ -120,7 +162,10 @@ meerdata pull -r "RDB_LINK" --no-cleanup
 # Use a specific Python virtual environment for job scripts
 meerdata pull -r "RDB_LINK" --venv /path/to/venv
 
-# Omitting `--venv` will attempt to use the Ilifu default (`/idia/projects/meerklass/virtualenv/meerklass`) if available (a warning will be emitted).
+# Omitting `--venv` will attempt to use the resolved site's default (if configured) when available (a warning will be emitted).
+
+# Override a SLURM resource request for this run only
+meerdata pull -r "RDB_LINK" -s "--mem=64GB" -s "--time=02:00:00"
 ```
 
 Note that we keep the data folders organised on ilifu. There should be no need to change --data-folder option if you are downloading the lastest campaign (XLP).
@@ -141,8 +186,9 @@ meerdata extract --rdb-file "PATH_TO_LOCAL_RDB"
   * `auto`: autocorrelations only, i.e. single dish IM data
   * `cross`: cross-correlations (measurement set), i.e. OTF data
   * `all`: both autocorrelations and cross-correlations
-* `--data-folder`: Directory for storing extracted data (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`) will be used when available (a warning will be emitted).
-* `--venv`: Path to Python virtual environment to use (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/virtualenv/meerklass`) will be used when available (a warning will be emitted). The specified venv will be activated in generated sbatch scripts via `source {venv}/bin/activate`. 
+* `--data-folder`: Directory for storing extracted data (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted).
+* `--venv`: Path to a Python virtual environment or conda/mamba environment to use (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted). A venv/virtualenv is activated via `source {venv}/bin/activate`; a conda/mamba environment (detected by the presence of `conda-meta/`) is activated via `conda activate {venv}` instead.
+* `-s, --slurm-override`: Override a SLURM sbatch directive for this run. Can be repeated. Ignored (with a warning) in local mode.
 
 **Examples:**
 
@@ -172,8 +218,9 @@ meerdata check -r "RDB_LINK"
 **Options:**
 
 * `-r, --rdb-link`: SARAO Archive RDB file link (required)
-* `--context-folder`: Directory to save sanity check results (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/sanity_checks`) will be used when available (a warning will be emitted).
-* `--venv`: Path to Python virtual environment (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/virtualenv/meerklass`) will be used when available (a warning will be emitted). The specified venv will be validated and activated in the generated sbatch script via `source {venv}/bin/activate`.
+* `--sanity-check-folder`: Folder to save sanity check results (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted).
+* `--venv`: Path to a Python virtual environment or conda/mamba environment (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted). A venv/virtualenv is activated via `source {venv}/bin/activate`; a conda/mamba environment (detected by the presence of `conda-meta/`) is activated via `conda activate {venv}` instead.
+* `-s, --slurm-override`: Override a SLURM sbatch directive for this run. Can be repeated. Ignored (with a warning) in local mode.
 
 **Example:**
 
@@ -194,7 +241,7 @@ meerdata verify -b BLOCK_NUMBER [ -b BLOCK_NUMBER ... ]
 **Options:**
 
 * `-b, --block-number`: Block number(s) to verify (required, can be specified multiple times)
-* `--context-folder`: Directory containing block directories (no default). If not provided, the Ilifu default (`/idia/projects/meerklass/MEERKLASS-1/uhf_data/XLP2025/raw`) will be used when available (a warning will be emitted).
+* `--data-folder`: Directory containing block directories (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted).
 
 **Example:**
 
@@ -204,7 +251,7 @@ meerdata verify -b 1753129121 -b 1753219043 -b 1753297658
 
 For each block number, this command will:
 
-* Check if the directory `<context-folder>/<block-number>` exists
+* Check if the directory `<data-folder>/<block-number>` exists
 * If it exists, report the disk usage in GB
 * If the directory exists but is empty (0 GB), print a `[WARNING]`
 * If the directory does not exist, print `[MISSING]`
@@ -224,17 +271,17 @@ A link to the raw `.rdb` file containing the metadata of the data block is requi
 
 1. Extracts CBID (block number) and token from the RDB link
 2. Creates necessary directories
-3. Generate and submits SLURM jobs for:
+3. Runs (on SLURM sites, generates and submits sbatch jobs for; on `local`, runs directly) each requested step:
    * Downloading MVF data from SARAO archive using `mvf_download.py` script from `katdal`
    * Extracting autocorrelations (if requested) using `mvf_copy.py` script from `katdal`
-   * Extracting measurement set for cross-correlations (if requested) the `mvftoms.py` from katdal (optionally use the local patched version `mvftoms_otf_patch.py` by passsing `--use-patched-mvftoms`)
+   * Extracting measurement set for cross-correlations (if requested) using `mvftoms.py` from katdal
    * Cleaning up the MVF files after extraction. This cleanup step can be skipped by passing `--no-cleanup` to `pull` (useful for debugging or preserving raw data)
 
 ### Extract Command
 
 1. Infers CBID from the local RDB file name
 2. Creates necessary output directories
-3. Generates and submits SLURM jobs for:
+3. Runs (on SLURM sites, generates and submits sbatch jobs for; on `local`, runs directly):
    * Extracting autocorrelations from local MVF data (if requested)
    * Extracting measurement set for cross-correlations (if requested)
    * Cleaning up temporary files after extraction
@@ -242,34 +289,43 @@ A link to the raw `.rdb` file containing the metadata of the data block is requi
 ### Check Command
 
 1. Extracts CBID and token from the RDB link
-2. Generates and submits a SLURM job that runs the museek sanity check plugin
-3. Results are saved to the specified context folder
+2. Runs the museek sanity check plugin (as a submitted SLURM job on SLURM sites, or directly on `local`)
+3. Results are saved to the specified sanity check folder
 
 ## SLURM Job Management
 
-* The tool automatically generate and submit SBATCH scripts.
+On sites with `scheduler: slurm` (e.g. Ilifu), the tool automatically generates and submits SBATCH scripts:
+
 * SBATCH scripts, log files, and job titles are attached with the block number for easy tracking
 * The generated scripts handle job dependencies:
   * Extraction jobs wait for download to complete
   * Cleanup runs after all extraction jobs finish
-  * Failed jobs can be requeued automatically
+  * The download step can be requeued automatically on failure
+* `-s`/`--slurm-override` can override any generated `#SBATCH` directive for a single run (see [Site Configuration](#site-configuration) and each command's options above)
 
 All SLURM output logs are saved in the `logs/` directory with descriptive filenames.
 
+On `scheduler: local` sites, none of the above applies — steps run directly as foreground subprocesses, and `-s`/`--slurm-override` is ignored (with a warning).
+
 ## Email Notifications
 
-All commands support SLURM email notifications:
-
-* `--mail-user`: Email address to receive notifications
-* `--mail-type`: When to send emails (e.g., `BEGIN`, `END`, `FAIL`, `ALL`)
-
-**Example:**
+There are no dedicated `--mail-user`/`--mail-type` flags. Instead, since site configs and `-s`/`--slurm-override` accept any SBATCH-compatible option (see [Site Configuration](#site-configuration)), set mail notifications either per-site (in `options:`, so every job at that site gets them) or per-run:
 
 ```bash
-meerdata pull -r "RDB_LINK" --mail-user user@example.com --mail-type ALL
+# Per-run, for this command only
+meerdata pull -r "RDB_LINK" -s "--mail-user=user@example.com" -s "--mail-type=ALL"
 ```
 
-See [SLURM sbatch documentation](https://slurm.schedmd.com/sbatch.html) for more mail type options.
+```yaml
+# Per-site default, in a site config's slurm: block
+slurm:
+  options:
+    - "--account=..."
+    - "--mail-user=team@example.com"
+    - "--mail-type=FAIL"
+```
+
+See [SLURM sbatch documentation](https://slurm.schedmd.com/sbatch.html) for all `--mail-type` values.
 
 ## Help
 

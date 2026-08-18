@@ -23,10 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "click",
-    "numpy",
-    "python-casacore",
-    "katdal",
-    "katpoint",
+    "pyyaml",
     "museek @ git+https://github.com/meerklass/museek.git",
 ]
 
@@ -44,10 +41,12 @@ Repository = "https://github.com/meerklass/meerdata"
 
 [project.scripts]
 meerdata = "meerdata.cli:cli"
-"mvftoms_otf_patch.py" = "meerdata.mvftoms_otf_patch:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true
 
 [tool.hatch.version]
 source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meerdata"]

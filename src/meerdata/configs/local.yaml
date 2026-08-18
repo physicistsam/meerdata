@@ -1,0 +1,11 @@
+# Fallback site config used when no other site is detected or specified.
+# No SLURM: job steps run directly as foreground subprocesses. There are no
+# safe default paths for an unknown machine, so --data-folder/--venv/
+# --sanity-check-folder must be supplied explicitly on the command line.
+
+scheduler: local
+
+paths:
+  venv: null
+  data_folder: null
+  sanity_check_folder: null

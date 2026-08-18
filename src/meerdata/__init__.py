@@ -11,4 +11,4 @@ __author__ = "MeerKLASS Team"
 
 from meerdata.cli import cli
 
-__all__ = ["cli", "__version__"]
+__all__ = ["__version__", "cli"]

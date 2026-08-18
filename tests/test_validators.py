@@ -1,79 +1,112 @@
-import importlib
-
 import click
 import pytest
 
-cli = importlib.import_module("meerdata.cli")
+from meerdata.cli import common
+from meerdata.sites import SiteConfig, SitePaths, SlurmConfig
 
 
-def test_validate_venv_uses_ilifu_default(monkeypatch, capsys):
-    # Make detect_ilifu return True
-    monkeypatch.setattr(cli, "detect_ilifu", lambda: (True, {"dummy": True}))
+class FakeCtx:
+    def __init__(self, site):
+        self.obj = site
 
-    # Substitute VENV_DEFAULT with object that reports exists()
-    class D:
-        def exists(self):
-            return True
 
-    monkeypatch.setattr(cli, "VENV_DEFAULT", D())
+def _site(name="testsite", **paths):
+    return SiteConfig(
+        name=name,
+        scheduler="slurm",
+        paths=SitePaths(**paths),
+        slurm=SlurmConfig(),
+    )
 
-    # Should return the default and print a warning
-    res = cli._validate_venv(None, None, None)
+
+def test_validate_venv_uses_site_default(tmp_path, capsys):
+    venv_dir = tmp_path / "venv"
+    venv_dir.mkdir()
+    ctx = FakeCtx(_site(venv=venv_dir))
+
+    res = common._validate_venv(ctx, None, None)
     captured = capsys.readouterr()
-    assert str(res) == str(cli.VENV_DEFAULT)
-    assert "WARNING: venv is not provided" in captured.out
+    assert res == venv_dir
+    assert (
+        'WARNING: venv is not provided, but the "testsite" site default' in captured.out
+    )
 
 
-def test_validate_venv_missing_default_raises(monkeypatch):
-    monkeypatch.setattr(cli, "detect_ilifu", lambda: (True, {"dummy": True}))
+def test_validate_venv_missing_default_raises(tmp_path):
+    ctx = FakeCtx(_site(venv=tmp_path / "does-not-exist"))
+    with pytest.raises(click.ClickException):
+        common._validate_venv(ctx, None, None)
 
-    class D:
-        def exists(self):
-            return False
 
-    monkeypatch.setattr(cli, "VENV_DEFAULT", D())
+def test_validate_venv_no_default_raises():
+    ctx = FakeCtx(_site())
+    with pytest.raises(click.ClickException):
+        common._validate_venv(ctx, None, None)
+
+
+def test_validate_venv_accepts_conda_env(tmp_path):
+    conda_env = tmp_path / "conda_env"
+    (conda_env / "conda-meta").mkdir(parents=True)
+    ctx = FakeCtx(_site())
+
+    res = common._validate_venv(ctx, None, conda_env)
+    assert res == conda_env
+
+
+def test_validate_venv_rejects_dir_without_activate_or_conda_meta(tmp_path):
+    bad = tmp_path / "not-an-env"
+    bad.mkdir()
+    ctx = FakeCtx(_site())
 
     with pytest.raises(click.ClickException):
-        cli._validate_venv(None, None, None)
+        common._validate_venv(ctx, None, bad)
 
 
-def test_validate_data_folder_ilifu_default(monkeypatch, capsys):
-    monkeypatch.setattr(cli, "detect_ilifu", lambda: (True, {"dummy": True}))
+def test_venv_activate_command_for_venv(tmp_path):
+    venv = tmp_path / "venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "activate").write_text("# fake activate")
 
-    class D:
-        def exists(self):
-            return True
+    assert common.venv_activate_command(venv) == f"source {venv}/bin/activate"
 
-        def is_dir(self):
-            return True
 
-    monkeypatch.setattr(cli, "DATA_FOLDER_DEFAULT", D())
+def test_venv_activate_command_for_conda_env(tmp_path):
+    conda_env = tmp_path / "conda_env"
+    (conda_env / "conda-meta").mkdir(parents=True)
 
-    res = cli._validate_data_folder(None, None, None)
+    cmd = common.venv_activate_command(conda_env)
+    assert cmd == f'eval "$(conda shell.bash hook)"\nconda activate {conda_env}'
+
+
+def test_validate_data_folder_uses_site_default(tmp_path, capsys):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    ctx = FakeCtx(_site(data_folder=data_dir))
+
+    res = common._validate_data_folder(ctx, None, None)
     captured = capsys.readouterr()
-    assert str(res) == str(cli.DATA_FOLDER_DEFAULT)
+    assert res == data_dir
     assert "WARNING: data folder not provided" in captured.out
 
 
-def test_validate_context_folder_ilifu_default(monkeypatch, capsys):
-    monkeypatch.setattr(cli, "detect_ilifu", lambda: (True, {"dummy": True}))
-
-    class D:
-        def exists(self):
-            return True
-
-        def is_dir(self):
-            return True
-
-    monkeypatch.setattr(cli, "CONTEXT_FOLDER_DEFAULT", D())
-
-    res = cli._validate_context_folder(None, None, None)
-    captured = capsys.readouterr()
-    assert str(res) == str(cli.CONTEXT_FOLDER_DEFAULT)
-    assert "WARNING: context folder not provided" in captured.out
-
-
-def test_validate_data_folder_not_ilifu_raises(monkeypatch):
-    monkeypatch.setattr(cli, "detect_ilifu", lambda: (False, {}))
+def test_validate_data_folder_no_default_raises():
+    ctx = FakeCtx(_site())
     with pytest.raises(click.ClickException):
-        cli._validate_data_folder(None, None, None)
+        common._validate_data_folder(ctx, None, None)
+
+
+def test_validate_sanity_check_folder_uses_site_default(tmp_path, capsys):
+    folder = tmp_path / "sanity"
+    folder.mkdir()
+    ctx = FakeCtx(_site(sanity_check_folder=folder))
+
+    res = common._validate_sanity_check_folder(ctx, None, None)
+    captured = capsys.readouterr()
+    assert res == folder
+    assert "WARNING: sanity check folder not provided" in captured.out
+
+
+def test_validate_sanity_check_folder_no_default_raises():
+    ctx = FakeCtx(_site())
+    with pytest.raises(click.ClickException):
+        common._validate_sanity_check_folder(ctx, None, None)
