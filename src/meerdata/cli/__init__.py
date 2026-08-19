@@ -10,6 +10,7 @@ from meerdata.cli.common import CONTEXT_SETTINGS
     context_settings=CONTEXT_SETTINGS,
     epilog="Run `meerdata COMMAND -h` for more details.",
 )
+@click.version_option(package_name="meerdata", prog_name="meerdata")
 @click.option(
     "--site",
     type=str,

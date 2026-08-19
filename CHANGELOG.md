@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `local` site: `pull`, `check`, and `extract` run each step directly as a foreground subprocess instead of generating and submitting SLURM sbatch scripts, so the tool now works without any SLURM installation.
 - `-s`/`--slurm-override` option on `pull`, `check`, and `extract` to override any generated `#SBATCH` directive for a single run (ignored, with a warning, in local mode).
 - `--venv` now also accepts conda/mamba environments (detected by the presence of `conda-meta/`), activated via `conda shell.bash hook` + `conda activate` in generated job bodies instead of `source {venv}/bin/activate`. Requires `conda` to be on `$PATH` in the job's shell.
+- `--version` option on the `meerdata` group, reporting the installed package version.
 
 ### Changed
 - Moved the `meerdata` package to the standard `src/` layout (`meerdata/` → `src/meerdata/`), matching the sibling `museek` project.

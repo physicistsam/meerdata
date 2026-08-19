@@ -6,7 +6,13 @@ from SARAO archive, running sanity checks, extracting correlation data,
 and verifying data blocks.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("meerdata")
+except PackageNotFoundError:
+    __version__ = "unknown"
+
 __author__ = "MeerKLASS Team"
 
 from meerdata.cli import cli
