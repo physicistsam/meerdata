@@ -139,7 +139,7 @@ meerdata pull -r "RDB_LINK"
 * `--data-folder`: Directory for storing data (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted). See [Site Configuration](#site-configuration).
 * `--venv`: Path to a Python virtual environment or conda/mamba environment to use (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted). A venv/virtualenv is activated via `source {venv}/bin/activate`; a conda/mamba environment (detected by the presence of `conda-meta/`) is activated via `conda activate {venv}` instead — this requires the `conda` executable to be on `$PATH` in the job's shell (e.g. via a site's `slurm.modules`, or an already-loaded shell environment).
 * `--no-cleanup`: Skip the full raw data cleanup step at the end (useful for debugging or preserving raw files).
-* `-s, --slurm-override`: Override a SLURM sbatch directive for this run, e.g. `--slurm-override "--mem=64GB"`. Can be repeated. Ignored (with a warning) in local mode.
+* `-s, --slurm-override`: Override a SLURM sbatch directive for this run, e.g. `--slurm-override "--mem=64GB"`. Can be repeated. Applies uniformly to every job step in this run (not per-step) — for per-step tuning, use a custom `--site-config` instead. Ignored (with a warning) in local mode. See [SLURM Job Management](#slurm-job-management).
 
 **Examples:**
 
@@ -188,7 +188,7 @@ meerdata extract --rdb-file "PATH_TO_LOCAL_RDB"
   * `all`: both autocorrelations and cross-correlations
 * `--data-folder`: Directory for storing extracted data (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted).
 * `--venv`: Path to a Python virtual environment or conda/mamba environment to use (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted). A venv/virtualenv is activated via `source {venv}/bin/activate`; a conda/mamba environment (detected by the presence of `conda-meta/`) is activated via `conda activate {venv}` instead.
-* `-s, --slurm-override`: Override a SLURM sbatch directive for this run. Can be repeated. Ignored (with a warning) in local mode.
+* `-s, --slurm-override`: Override a SLURM sbatch directive for this run. Can be repeated. Applies uniformly to every job step in this run (not per-step) — for per-step tuning, use a custom `--site-config` instead. Ignored (with a warning) in local mode. See [SLURM Job Management](#slurm-job-management).
 
 **Examples:**
 
@@ -220,7 +220,7 @@ meerdata check -r "RDB_LINK"
 * `-r, --rdb-link`: SARAO Archive RDB file link (required)
 * `--sanity-check-folder`: Folder to save sanity check results (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted).
 * `--venv`: Path to a Python virtual environment or conda/mamba environment (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted). A venv/virtualenv is activated via `source {venv}/bin/activate`; a conda/mamba environment (detected by the presence of `conda-meta/`) is activated via `conda activate {venv}` instead.
-* `-s, --slurm-override`: Override a SLURM sbatch directive for this run. Can be repeated. Ignored (with a warning) in local mode.
+* `-s, --slurm-override`: Override a SLURM sbatch directive for this run. Can be repeated. Applies uniformly to every job step in this run (not per-step) — for per-step tuning, use a custom `--site-config` instead. Ignored (with a warning) in local mode. See [SLURM Job Management](#slurm-job-management).
 
 **Example:**
 
@@ -301,7 +301,7 @@ On sites with `scheduler: slurm` (e.g. Ilifu), the tool automatically generates 
   * Extraction jobs wait for download to complete
   * Cleanup runs after all extraction jobs finish
   * The download step can be requeued automatically on failure
-* `-s`/`--slurm-override` can override any generated `#SBATCH` directive for a single run (see [Site Configuration](#site-configuration) and each command's options above)
+* `-s`/`--slurm-override` can override any generated `#SBATCH` directive for a single run (see [Site Configuration](#site-configuration) and each command's options above). The override applies **uniformly to every job step** in that invocation (e.g. `pull -s "--mem=64GB"` sets `--mem=64GB` on the download, extraction, *and* cleanup scripts alike) — it is not a way to target a single step. If you need different resources per step on an ongoing basis, set them in a site config's `slurm.resources` instead (built-in sites, or your own via `--site-config`).
 
 All SLURM output logs are saved in the `logs/` directory with descriptive filenames.
 
