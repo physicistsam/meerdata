@@ -3,9 +3,11 @@
 import subprocess
 
 import click
+from rich.table import Table
 
 from meerdata.cli import cli
 from meerdata.cli.common import data_folder_option
+from meerdata.cli.console import console, failure, header, warning
 
 
 @cli.command()
@@ -20,7 +22,7 @@ from meerdata.cli.common import data_folder_option
 @data_folder_option
 def verify(block_number, data_folder):
     """Verify existent and disk usage of data blocks."""
-    click.echo(f"Verifying {len(block_number)} block(s) in {data_folder}")
+    header(f"Verifying {len(block_number)} block(s) in {data_folder}")
     summary = []
     for bn in block_number:
         block_dir = data_folder / bn
@@ -43,20 +45,23 @@ def verify(block_number, data_folder):
                 IndexError,
             ) as e:
                 size_gb = "ERR"
-                click.echo(f"  [!] Error getting disk usage for {block_dir}: {e}")
+                failure(f"Error getting disk usage for {block_dir}: {e}")
             if size_gb == 0:
-                click.echo(
-                    f"  [WARNING] {block_dir} exists but is empty (disk usage: 0 GB)"
-                )
+                warning(f"{block_dir} exists but is empty (disk usage: 0 GB)")
             else:
-                click.echo(f"  [OK] {block_dir} exists, disk usage: {size_gb} GB")
+                console.print(
+                    f"  [green]✓[/green] {block_dir} exists, disk usage: {size_gb} GB"
+                )
             summary.append((bn, True, size_gb))
         else:
-            click.echo(f"  [MISSING] {block_dir} does not exist.")
+            failure(f"{block_dir} does not exist.")
             summary.append((bn, False, 0))
-    # Print summary
-    click.echo("\nSummary Report:")
-    click.echo("Block Number | Exists | Disk Usage (GB)")
-    click.echo("-------------|--------|----------------")
+
+    table = Table(title="Summary Report")
+    table.add_column("Block Number")
+    table.add_column("Exists")
+    table.add_column("Disk Usage (GB)", justify="right")
     for bn, exists, size_gb in summary:
-        click.echo(f"{bn:<12} | {'YES' if exists else 'NO ':<6} | {size_gb}")
+        exists_cell = "[green]YES[/green]" if exists else "[red]NO[/red]"
+        table.add_row(bn, exists_cell, str(size_gb))
+    console.print(table)

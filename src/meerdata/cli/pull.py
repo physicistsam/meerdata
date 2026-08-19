@@ -13,6 +13,7 @@ from meerdata.cli.common import (
     slurm_override_option,
     venv_option,
 )
+from meerdata.cli.console import console, header
 from meerdata.cli.slurm import _run_data_jobs
 
 
@@ -68,8 +69,8 @@ def pull(
     dest.mkdir(parents=True, exist_ok=True)
     full_tmp_dest.mkdir(parents=True, exist_ok=True)
 
-    click.echo(f"Pulling {correlation} correlation data for CBID: {cbid}")
-    click.echo(f"Destination: {dest}")
+    header(f"Pulling {correlation} correlation data for CBID: {cbid}")
+    console.print(f"  Destination: [cyan]{dest}[/cyan]")
 
     # Determine which steps to run based on correlation type
     steps = ["download"]  # Always download for pull command

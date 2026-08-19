@@ -12,6 +12,7 @@ from meerdata.cli.common import (
     slurm_override_option,
     venv_option,
 )
+from meerdata.cli.console import console, header
 from meerdata.cli.slurm import _run_data_jobs
 
 
@@ -39,8 +40,8 @@ def check(
     # Check that path to slurm log file exists. If not create it.
     _ensure_job_dirs()
 
-    click.echo(f"Running sanity check for CBID: {cbid}")
-    click.echo(f"Sanity check folder: {sanity_check_folder}")
+    header(f"Running sanity check for CBID: {cbid}")
+    console.print(f"  Sanity check folder: [cyan]{sanity_check_folder}[/cyan]")
 
     _run_data_jobs(
         ["sanity-check"],

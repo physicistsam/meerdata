@@ -23,6 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "click",
+    "rich",
     "pyyaml",
     "museek @ git+https://github.com/meerklass/museek.git",
 ]

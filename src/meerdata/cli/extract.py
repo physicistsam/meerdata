@@ -12,6 +12,7 @@ from meerdata.cli.common import (
     slurm_override_option,
     venv_option,
 )
+from meerdata.cli.console import console, header
 from meerdata.cli.slurm import _run_data_jobs
 
 
@@ -59,9 +60,9 @@ def extract(
     _ensure_job_dirs()
     dest.mkdir(parents=True, exist_ok=True)
 
-    click.echo(f"Extracting {correlation} correlation data for CBID: {cbid}")
-    click.echo(f"Source RDB: {rdb_file}")
-    click.echo(f"Destination: {dest}")
+    header(f"Extracting {correlation} correlation data for CBID: {cbid}")
+    console.print(f"  Source RDB: [cyan]{rdb_file}[/cyan]")
+    console.print(f"  Destination: [cyan]{dest}[/cyan]")
 
     # Determine which steps to run based on correlation type (no download)
     steps = []

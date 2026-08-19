@@ -19,17 +19,15 @@ def _site(name="testsite", **paths):
     )
 
 
-def test_validate_venv_uses_site_default(tmp_path, capsys):
+def test_validate_venv_uses_site_default(tmp_path, caplog):
     venv_dir = tmp_path / "venv"
     venv_dir.mkdir()
     ctx = FakeCtx(_site(venv=venv_dir))
 
+    caplog.set_level("WARNING", logger="meerdata")
     res = common._validate_venv(ctx, None, None)
-    captured = capsys.readouterr()
     assert res == venv_dir
-    assert (
-        'WARNING: venv is not provided, but the "testsite" site default' in captured.out
-    )
+    assert 'venv is not provided, but the "testsite" site default' in caplog.text
 
 
 def test_validate_venv_missing_default_raises(tmp_path):
@@ -78,15 +76,15 @@ def test_venv_activate_command_for_conda_env(tmp_path):
     assert cmd == f'eval "$(conda shell.bash hook)"\nconda activate {conda_env}'
 
 
-def test_validate_data_folder_uses_site_default(tmp_path, capsys):
+def test_validate_data_folder_uses_site_default(tmp_path, caplog):
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     ctx = FakeCtx(_site(data_folder=data_dir))
 
+    caplog.set_level("WARNING", logger="meerdata")
     res = common._validate_data_folder(ctx, None, None)
-    captured = capsys.readouterr()
     assert res == data_dir
-    assert "WARNING: data folder not provided" in captured.out
+    assert "data folder not provided" in caplog.text
 
 
 def test_validate_data_folder_no_default_raises():
@@ -95,15 +93,15 @@ def test_validate_data_folder_no_default_raises():
         common._validate_data_folder(ctx, None, None)
 
 
-def test_validate_sanity_check_folder_uses_site_default(tmp_path, capsys):
+def test_validate_sanity_check_folder_uses_site_default(tmp_path, caplog):
     folder = tmp_path / "sanity"
     folder.mkdir()
     ctx = FakeCtx(_site(sanity_check_folder=folder))
 
+    caplog.set_level("WARNING", logger="meerdata")
     res = common._validate_sanity_check_folder(ctx, None, None)
-    captured = capsys.readouterr()
     assert res == folder
-    assert "WARNING: sanity check folder not provided" in captured.out
+    assert "sanity check folder not provided" in caplog.text
 
 
 def test_validate_sanity_check_folder_no_default_raises():

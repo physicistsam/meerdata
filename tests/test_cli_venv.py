@@ -66,7 +66,7 @@ def test_pull_includes_venv_source(tmp_path: Path, monkeypatch):
     assert f"source {venv}/bin/activate" not in cleanup_script.read_text()
 
 
-def test_pull_dry_run_prints_sbatch_content(tmp_path: Path, monkeypatch):
+def test_pull_dry_run_prints_sbatch_content(tmp_path: Path, monkeypatch, caplog):
     """--dry-run should print each generated sbatch script's content, not just its path."""
     runner = CliRunner()
     data_folder = tmp_path / "data"
@@ -79,6 +79,7 @@ def test_pull_dry_run_prints_sbatch_content(tmp_path: Path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
 
+    caplog.set_level("INFO", logger="meerdata")
     result = runner.invoke(
         cli,
         [
@@ -101,7 +102,7 @@ def test_pull_dry_run_prints_sbatch_content(tmp_path: Path, monkeypatch):
     assert auto_script.exists(), auto_script
     content = auto_script.read_text()
 
-    assert "Created sbatch script:" in result.output
+    assert "Created sbatch script:" in caplog.text
     assert content in result.output
 
 

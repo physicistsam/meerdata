@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-s`/`--slurm-override` option on `pull`, `check`, and `extract` to override any generated `#SBATCH` directive for a single run (ignored, with a warning, in local mode).
 - `--venv` now also accepts conda/mamba environments (detected by the presence of `conda-meta/`), activated via `conda shell.bash hook` + `conda activate` in generated job bodies instead of `source {venv}/bin/activate`. Requires `conda` to be on `$PATH` in the job's shell.
 - `--version` option on the `meerdata` group, reporting the installed package version.
+- Rich-formatted CLI output: status/progress messages now go through Python's `logging` (`meerdata/cli/console.py`, a `RichHandler`-backed `meerdata` logger) with colored level tags, and `verify`'s summary is rendered as a `rich` table instead of a hand-built ASCII one. Raw dumped content (`--dry-run` sbatch scripts/local command bodies) is left as plain unstyled text so it stays copy-pasteable.
 
 ### Changed
 - Moved the `meerdata` package to the standard `src/` layout (`meerdata/` → `src/meerdata/`), matching the sibling `museek` project.

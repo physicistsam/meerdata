@@ -4,10 +4,17 @@ import os
 import subprocess
 from pathlib import Path
 
-import click
 from museek.cli.slurm_utils import merge_slurm_options
+from rich.syntax import Syntax
 
 from meerdata.cli.common import venv_activate_command
+from meerdata.cli.console import console, header, success, warning
+
+
+def _print_script(content: str) -> None:
+    """Print an sbatch/local-command body with bash syntax highlighting."""
+    console.print(Syntax(content, "bash", background_color="default"))
+
 
 STEP_JOB_NAMES = {
     "download": "download_MVF",
@@ -272,12 +279,12 @@ def _submit_slurm_jobs(scripts, cbid, dry_run=False):
         script_files[script_type] = sbatch_dir / filename
         with open(script_files[script_type], "w") as f:
             f.write(content)
-        click.echo(f"Created sbatch script: {script_files[script_type]}")
+        success(f"Created sbatch script: {script_files[script_type]}")
         if dry_run:
-            click.echo(content)
+            _print_script(content)
 
     if dry_run:
-        click.echo("Dry run mode: Scripts created but not submitted")
+        warning("Dry run mode: Scripts created but not submitted")
         return
 
     # Submit jobs with proper dependencies
@@ -287,12 +294,12 @@ def _submit_slurm_jobs(scripts, cbid, dry_run=False):
     if "download" in script_files:
         download_id = _submit_job(script_files["download"])
         job_ids.append(download_id)
-        click.echo(f"Submitted download job: {download_id}")
+        success(f"Submitted download job: {download_id}")
 
     if "sanity-check" in script_files:
         sanity_id = _submit_job(script_files["sanity-check"])
         job_ids.append(sanity_id)
-        click.echo(f"Submitted sanity check job: {sanity_id}")
+        success(f"Submitted sanity check job: {sanity_id}")
 
     extraction_jobs = []
     dependency = f"afterok:{download_id}" if download_id else None
@@ -301,13 +308,13 @@ def _submit_slurm_jobs(scripts, cbid, dry_run=False):
         auto_id = _submit_job(script_files["auto"], dependency)
         extraction_jobs.append(auto_id)
         job_ids.append(auto_id)
-        click.echo(f"Submitted auto extraction job: {auto_id}")
+        success(f"Submitted auto extraction job: {auto_id}")
 
     if "ms" in script_files:
         ms_id = _submit_job(script_files["ms"], dependency)
         extraction_jobs.append(ms_id)
         job_ids.append(ms_id)
-        click.echo(f"Submitted MS extraction job: {ms_id}")
+        success(f"Submitted MS extraction job: {ms_id}")
 
     if "cleanup" in script_files:
         if extraction_jobs:
@@ -320,9 +327,9 @@ def _submit_slurm_jobs(scripts, cbid, dry_run=False):
             cleanup_id = _submit_job(script_files["cleanup"], cleanup_dependency)
 
         job_ids.append(cleanup_id)
-        click.echo(f"Submitted cleanup job: {cleanup_id}")
+        success(f"Submitted cleanup job: {cleanup_id}")
 
-    click.echo(f"All jobs submitted with IDs: {','.join(job_ids)}")
+    header(f"All jobs submitted with IDs: {','.join(job_ids)}")
 
 
 def _run_local_steps(step_bodies, dry_run=False):
@@ -332,16 +339,16 @@ def _run_local_steps(step_bodies, dry_run=False):
             continue
         body = step_bodies[step]
         if dry_run:
-            click.echo(f"--- {step} (dry run, not executed) ---")
-            click.echo(body)
+            header(f"{step} (dry run, not executed)")
+            _print_script(body)
             continue
-        click.echo(f"Running {step} step locally...")
+        header(f"Running {step} step locally...")
         subprocess.run(["bash", "-c", body], check=True)
 
     if dry_run:
-        click.echo("Dry run mode: commands printed but not executed")
+        warning("Dry run mode: commands printed but not executed")
     else:
-        click.echo("All steps completed")
+        success("All steps completed")
 
 
 def _run_data_jobs(
@@ -361,8 +368,8 @@ def _run_data_jobs(
 ):
     """Build step bodies and either submit them to SLURM or run them locally."""
     if slurm_override and site.scheduler != "slurm":
-        click.echo(
-            "WARNING: --slurm-override is ignored because the resolved site's "
+        warning(
+            "--slurm-override is ignored because the resolved site's "
             f'scheduler is "{site.scheduler}".'
         )
 

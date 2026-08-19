@@ -4,6 +4,8 @@ from pathlib import Path
 
 import click
 
+from meerdata.cli.console import warning
+
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 100}
 PATH_DW = click.Path(
     exists=True,
@@ -25,8 +27,8 @@ def _validate_sanity_check_folder(ctx, param, value):
     if value is None:
         default = site.paths.sanity_check_folder
         if default is not None and default.exists():
-            click.echo(
-                f"WARNING: sanity check folder not provided, but the "
+            warning(
+                f"sanity check folder not provided, but the "
                 f'"{site.name}" site default was found. Using "{default}"'
             )
             return default
@@ -52,8 +54,8 @@ def _validate_data_folder(ctx, param, value):
     if value is None:
         default = site.paths.data_folder
         if default is not None and default.exists():
-            click.echo(
-                f'WARNING: data folder not provided, but the "{site.name}" site '
+            warning(
+                f'data folder not provided, but the "{site.name}" site '
                 f'default was found. Using "{default}"'
             )
             return default
@@ -103,8 +105,8 @@ def _validate_venv(ctx, param, value):
     if value is None:
         default = site.paths.venv
         if default is not None and default.exists():
-            click.echo(
-                f'WARNING: venv is not provided, but the "{site.name}" site default '
+            warning(
+                f'venv is not provided, but the "{site.name}" site default '
                 f'was found. Using "{default}" environment'
             )
             return default
