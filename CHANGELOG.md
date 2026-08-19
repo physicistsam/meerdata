@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Moved the `meerdata` package to the standard `src/` layout (`meerdata/` → `src/meerdata/`), matching the sibling `museek` project.
+- `--dry-run` on `pull`/`check`/`extract` now prints each generated sbatch script's content (not just its file path) in SLURM mode, matching the existing behavior in local mode.
 - Split the single `meerdata/cli.py` into a `meerdata/cli/` package (`common.py`, `slurm.py`, and one module per command), consolidating previously-duplicated option declarations and directory-creation logic into `common.py`.
 - `check`'s `--context-folder` option (and the underlying `CONTEXT_FOLDER_DEFAULT`/`_validate_context_folder` names) are now `--sanity-check-folder` everywhere, matching `verify`'s equivalent option, which is `--data-folder`. Both now share the same `data_folder_option`/`sanity_check_folder_option` decorators.
 

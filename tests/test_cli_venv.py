@@ -66,6 +66,45 @@ def test_pull_includes_venv_source(tmp_path: Path, monkeypatch):
     assert f"source {venv}/bin/activate" not in cleanup_script.read_text()
 
 
+def test_pull_dry_run_prints_sbatch_content(tmp_path: Path, monkeypatch):
+    """--dry-run should print each generated sbatch script's content, not just its path."""
+    runner = CliRunner()
+    data_folder = tmp_path / "data"
+    data_folder.mkdir()
+    venv = make_fake_venv(tmp_path)
+
+    rdb_link = (
+        "https://archive-gw-1.kat.ac.za/7777777777/7777777777_sdp_l0.full.rdb?token=tok"
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        cli,
+        [
+            *SITE_ARGS,
+            "pull",
+            "-r",
+            rdb_link,
+            "--data-folder",
+            str(data_folder),
+            "--venv",
+            str(venv),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    cbid = "7777777777"
+    auto_script = tmp_path / "sbatch" / f"local_extract_auto-{cbid}.sbatch"
+    assert auto_script.exists(), auto_script
+    content = auto_script.read_text()
+
+    assert "Created sbatch script:" in result.output
+    assert content in result.output
+
+
 def test_check_includes_venv_source(tmp_path: Path, monkeypatch):
     runner = CliRunner()
     venv = make_fake_venv(tmp_path)

@@ -273,6 +273,8 @@ def _submit_slurm_jobs(scripts, cbid, dry_run=False):
         with open(script_files[script_type], "w") as f:
             f.write(content)
         click.echo(f"Created sbatch script: {script_files[script_type]}")
+        if dry_run:
+            click.echo(content)
 
     if dry_run:
         click.echo("Dry run mode: Scripts created but not submitted")
