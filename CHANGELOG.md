@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `pull -c cross` and `extract -c cross` (or `-c ms`-only runs generally) no longer lose the RDB file: only `mvf_copy.py` (the "auto" step) copies the RDB into `dest/<cbid>/` as a side effect, so a cross-only run's cleanup step used to purge the temp download directory before any copy of the RDB reached its final location. The cleanup step now saves the RDB into `dest/<cbid>/` first.
 - `extract` no longer deletes the source RDB's own directory. Its cleanup step reused the same "purge the temp download dir" logic as `pull`, but for `extract` that "temp" directory is usually wherever the caller's `--rdb-file` already lives (e.g. `dest/<cbid>/<cbid>/`, the very directory `verify` checks) — so every `extract` run was `rm -r`ing the block's RDB and already-extracted chunks. Cleanup is now skipped when the RDB is already at its final destination, and `extract` gained a `--no-cleanup` flag (matching `pull`) for the remaining cases.
+- `verify`'s chunk-completeness check no longer reports a negative `missing_chunks` count when more `.npy` files exist on disk than expected, and counts chunk files lazily instead of materializing the full glob into a list.
+- Site auto-detection no longer raises `AttributeError` when a YAML `detect.env` marker's expected value is a non-string YAML scalar (e.g. a boolean or number).
+- CBID/token extraction from an RDB link now uses `urllib.parse` instead of brittle string-splitting, fixing mis-parsing when extra query parameters follow `token=`.
+- `--full-tmp-folder` no longer requires the path to already exist (it's an output directory the code creates itself).
+- SLURM download-job requeue-on-failure (`|| scontrol requeue ...`) no longer accidentally depends on whether the site config sets `slurm.modules` — it now always applies to the download step.
+- Removed a committed operator scratch file (`data-download-20260812`) that contained real SARAO archive access tokens.
+- `pull`, `extract`, and `check` now check that the resolved data/sanity-check/full-tmp folder is actually writable *before* doing anything else (`os.access(path, os.W_OK)`, checked in each option's callback). Previously this was only checked for an explicitly-passed `--data-folder`/`--sanity-check-folder`; the common case of falling back to the resolved site's default path skipped the check entirely, and `--full-tmp-folder` had no check at all.
 
 ### Removed
 - `--mail-user`/`--mail-type` options on `pull`, `check`, and `extract`. Mail notifications (and any other SBATCH directive) are now set via a site config's `slurm.options`/`slurm.resources`, or per-run via `-s`/`--slurm-override`.

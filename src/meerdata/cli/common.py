@@ -1,5 +1,6 @@
 """Shared CLI settings, option decorators, validators, and small helpers."""
 
+import os
 import urllib.parse
 from pathlib import Path
 
@@ -18,6 +19,12 @@ PATH_DW = click.Path(
 )
 
 
+def _ensure_writable(path):
+    """Raise a ClickException if the current user cannot write to `path`."""
+    if not os.access(path, os.W_OK):
+        raise click.ClickException(f"No write permission for {path}.")
+
+
 def _validate_sanity_check_folder(ctx, param, value):
     """Validate or infer the sanity check folder path for the resolved site.
 
@@ -32,6 +39,7 @@ def _validate_sanity_check_folder(ctx, param, value):
                 f"sanity check folder not provided, but the "
                 f'"{site.name}" site default was found. Using "{default}"'
             )
+            _ensure_writable(default)
             return default
         raise click.ClickException(
             f'No sanity check folder specified, and the "{site.name}" site has no '
@@ -42,6 +50,7 @@ def _validate_sanity_check_folder(ctx, param, value):
         raise click.ClickException(f"Sanity check folder {value} does not exist.")
     if not value.is_dir():
         raise click.ClickException(f"{value} is not a directory.")
+    _ensure_writable(value)
     return value
 
 
@@ -59,6 +68,7 @@ def _validate_data_folder(ctx, param, value):
                 f'data folder not provided, but the "{site.name}" site '
                 f'default was found. Using "{default}"'
             )
+            _ensure_writable(default)
             return default
         raise click.ClickException(
             f'No data folder specified, and the "{site.name}" site has no usable '
@@ -69,6 +79,7 @@ def _validate_data_folder(ctx, param, value):
         raise click.ClickException(f"Data folder {value} does not exist.")
     if not value.is_dir():
         raise click.ClickException(f"{value} is not a directory.")
+    _ensure_writable(value)
     return value
 
 
@@ -182,11 +193,28 @@ venv_option = click.option(
     ),
 )
 
+
+def _validate_full_tmp_folder(ctx, param, value):
+    """Check write permission for `--full-tmp-folder`, if provided.
+
+    The directory may not exist yet (it gets created later), so check the
+    nearest existing ancestor instead.
+    """
+    if value is None:
+        return value
+    existing = value
+    while not existing.exists():
+        existing = existing.parent
+    _ensure_writable(existing)
+    return value
+
+
 full_tmp_folder_option = click.option(
     "--full-tmp-folder",
     type=click.Path(resolve_path=True, file_okay=False, path_type=Path),
     default=None,
     show_default=False,
+    callback=_validate_full_tmp_folder,
     help=(
         "Directory for storing temporary full raw data during download. "
         "If not provided, defaults to data_folder/full_tmp/cbid. "
