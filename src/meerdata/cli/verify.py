@@ -90,18 +90,45 @@ def _verify_block(block_dir, bn):
     }
 
 
+def _discover_block_numbers(data_folder):
+    """Return sorted block numbers found as immediate subdirectories of
+    `data_folder` (any directory name made up entirely of digits).
+    """
+    return sorted(
+        p.name for p in data_folder.iterdir() if p.is_dir() and p.name.isdigit()
+    )
+
+
 @cli.command()
 @click.option(
     "-b",
     "--block-number",
-    required=True,
     multiple=True,
     type=str,
     help="Block number(s) to verify. Can be specified multiple times.",
 )
+@click.option(
+    "-a",
+    "--all",
+    "all_blocks",
+    is_flag=True,
+    help="Verify every block found directly under --data-folder, instead of "
+    "specifying block numbers individually.",
+)
 @data_folder_option
-def verify(block_number, data_folder):
+def verify(block_number, all_blocks, data_folder):
     """Verify existence and completeness of data blocks."""
+    if all_blocks:
+        if block_number:
+            warning("--all was given; ignoring explicit --block-number values.")
+        block_number = _discover_block_numbers(data_folder)
+        if not block_number:
+            raise click.ClickException(f"No block directories found in {data_folder}.")
+    elif not block_number:
+        raise click.ClickException(
+            "Specify at least one -b/--block-number, or use -a/--all."
+        )
+
     header(f"Verifying {len(block_number)} block(s) in {data_folder}")
     summary = [_verify_block(data_folder / bn, bn) for bn in block_number]
     # Group failing blocks together, ahead of fully-verified ones.

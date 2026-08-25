@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--version` option on the `meerdata` group, reporting the installed package version.
 - Rich-formatted CLI output: status/progress messages now go through Python's `logging` (`meerdata/cli/console.py`, a `RichHandler`-backed `meerdata` logger) with colored level tags, and `verify`'s summary is rendered as a `rich` table instead of a hand-built ASCII one. Raw dumped content (`--dry-run` sbatch scripts/local command bodies) is left as plain unstyled text so it stays copy-pasteable.
 - `verify` now checks that each block's RDB metadata file exists (`<data_folder>/<cbid>/<cbid>/<cbid>_sdp_l0.full.rdb`) and validates chunk-store completeness by comparing the RDB's expected chunk counts (via `katdal`'s `chunk_info`) against the `.npy` chunk files actually present on disk, instead of only checking that the block's top-level directory exists. The summary table gains `RDB Exists`, `Data Complete`, and `Missing Chunks` columns, and failing blocks are grouped ahead of fully-verified ones.
+- `-a`/`--all` option on `verify` to check every block found directly under `--data-folder` (any immediate subdirectory whose name is all digits), instead of passing each block number individually via `-b`/`--block-number`.
 
 ### Changed
 - Moved the `meerdata` package to the standard `src/` layout (`meerdata/` → `src/meerdata/`), matching the sibling `museek` project.
