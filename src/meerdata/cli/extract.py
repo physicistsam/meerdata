@@ -36,6 +36,11 @@ from meerdata.cli.slurm import _run_data_jobs
 @data_folder_option
 @dry_run_option
 @venv_option
+@click.option(
+    "--no-cleanup",
+    is_flag=True,
+    help="Skip the temp-download cleanup step at the end.",
+)
 @slurm_override_option
 @click.pass_obj
 def extract(
@@ -45,6 +50,7 @@ def extract(
     data_folder,
     dry_run,
     venv,
+    no_cleanup,
     slurm_override,
 ):
     """Extract auto or cross-correlation from local data."""
@@ -70,7 +76,8 @@ def extract(
         steps.append("auto")
     if correlation in ["cross", "all"]:
         steps.append("ms")
-    steps.append("cleanup")  # Always cleanup at the end
+    if not no_cleanup:
+        steps.append("cleanup")
 
     _run_data_jobs(
         steps,

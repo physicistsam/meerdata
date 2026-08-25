@@ -29,6 +29,31 @@ STEP_EXTRA_SLURM_OPTIONS = {
 LOCAL_RUN_ORDER = ["download", "sanity-check", "auto", "ms", "cleanup"]
 
 
+def _rdb_save_and_cleanup_body(local_rdb, dest, cbid, full_tmp_dest):
+    """Shell body for the cleanup step: save the RDB into dest/<cbid>/, then
+    purge the temp download directory.
+
+    Only `mvf_copy.py` (the "auto" step) writes a copy of the RDB into
+    dest/<cbid>/ as a side effect; `mvftoms.py` ("ms"/cross) does not. So a
+    cross-only pull (or an extract that only runs "ms") would otherwise lose
+    the RDB entirely once cleanup removes the temp download dir it came
+    from. `cp -n` avoids clobbering an RDB `mvf_copy.py` already wrote there
+    (its copy has selection-filtered telstate overrides baked in).
+
+    Returns None (skip the cleanup step) when `full_tmp_dest` already *is*
+    the dest/<cbid> directory -- e.g. `extract` pointed straight at an
+    RDB already in place -- since there's no separate scratch space to copy
+    from or purge.
+    """
+    target_dir = dest / cbid
+    if full_tmp_dest.resolve() == target_dir.resolve():
+        return None
+    target_rdb = target_dir / local_rdb.name
+    return (
+        f"mkdir -p {target_dir}\ncp -n {local_rdb} {target_rdb}\nrm -r {full_tmp_dest}"
+    )
+
+
 def _build_step_bodies(
     steps,
     cbid,
@@ -118,7 +143,9 @@ echo $MS
 mvftoms.py -o $MS -v -f $localRDB"""
 
     if "cleanup" in steps:
-        bodies["cleanup"] = f"rm -r {full_tmp_dest}"
+        cleanup_body = _rdb_save_and_cleanup_body(local_rdb, dest, cbid, full_tmp_dest)
+        if cleanup_body is not None:
+            bodies["cleanup"] = cleanup_body
 
     if "sanity-check" in steps:
         if not token or not context_folder or not venv_path:

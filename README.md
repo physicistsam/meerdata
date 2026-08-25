@@ -188,6 +188,7 @@ meerdata extract --rdb-file "PATH_TO_LOCAL_RDB"
   * `all`: both autocorrelations and cross-correlations
 * `--data-folder`: Directory for storing extracted data (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted).
 * `--venv`: Path to a Python virtual environment or conda/mamba environment to use (no default). If not provided, the resolved site's default (if configured) will be used when available (a warning will be emitted). A venv/virtualenv is activated via `source {venv}/bin/activate`; a conda/mamba environment (detected by the presence of `conda-meta/`) is activated via `conda activate {venv}` instead.
+* `--no-cleanup`: Skip the temp-download cleanup step at the end. Cleanup is automatically skipped anyway when `--rdb-file` already points at its final destination (i.e. the RDB was never in a separate temp download directory to begin with) — this flag is for the remaining cases where you want to keep that temp directory around too.
 * `-s, --slurm-override`: Override a SLURM sbatch directive for this run. Can be repeated. Applies uniformly to every job step in this run (not per-step) — for per-step tuning, use a custom `--site-config` instead. Ignored (with a warning) in local mode. See [SLURM Job Management](#slurm-job-management).
 
 **Examples:**

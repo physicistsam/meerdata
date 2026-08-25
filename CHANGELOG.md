@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check`'s `--context-folder` option (and the underlying `CONTEXT_FOLDER_DEFAULT`/`_validate_context_folder` names) are now `--sanity-check-folder` everywhere, matching `verify`'s equivalent option, which is `--data-folder`. Both now share the same `data_folder_option`/`sanity_check_folder_option` decorators.
 - Re-added `katdal` as a direct dependency (see Removed below) — `verify`'s new chunk-completeness check calls `katdal.open()` directly rather than relying on it only being pulled in transitively via `museek`.
 
+### Fixed
+- `pull -c cross` and `extract -c cross` (or `-c ms`-only runs generally) no longer lose the RDB file: only `mvf_copy.py` (the "auto" step) copies the RDB into `dest/<cbid>/` as a side effect, so a cross-only run's cleanup step used to purge the temp download directory before any copy of the RDB reached its final location. The cleanup step now saves the RDB into `dest/<cbid>/` first.
+- `extract` no longer deletes the source RDB's own directory. Its cleanup step reused the same "purge the temp download dir" logic as `pull`, but for `extract` that "temp" directory is usually wherever the caller's `--rdb-file` already lives (e.g. `dest/<cbid>/<cbid>/`, the very directory `verify` checks) — so every `extract` run was `rm -r`ing the block's RDB and already-extracted chunks. Cleanup is now skipped when the RDB is already at its final destination, and `extract` gained a `--no-cleanup` flag (matching `pull`) for the remaining cases.
+
 ### Removed
 - `--mail-user`/`--mail-type` options on `pull`, `check`, and `extract`. Mail notifications (and any other SBATCH directive) are now set via a site config's `slurm.options`/`slurm.resources`, or per-run via `-s`/`--slurm-override`.
 - `mvftoms_otf_patch.py` and the `--use-patched-mvftoms` option on `pull`/`extract` (deprecated since the previous release). `pull`/`extract` now always use katdal's `mvftoms.py`.

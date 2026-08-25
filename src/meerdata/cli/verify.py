@@ -46,9 +46,7 @@ def _check_chunk_completeness(rdb_path, block_dir):
         actual = len(list(chunk_dir.glob("**/*.npy"))) if chunk_dir.exists() else 0
         if actual != expected:
             missing_chunks += expected - actual
-            warning(
-                f"{chunk_dir}: expected {expected} chunks, found {actual}"
-            )
+            warning(f"{chunk_dir}: expected {expected} chunks, found {actual}")
     return missing_chunks
 
 
@@ -148,9 +146,7 @@ def verify(block_number, all_blocks, data_folder):
             complete_cell, missing_cell = "[red]ERROR[/red]", "-"
         else:
             complete_cell = (
-                "[green]YES[/green]"
-                if row["missing_chunks"] == 0
-                else "[red]NO[/red]"
+                "[green]YES[/green]" if row["missing_chunks"] == 0 else "[red]NO[/red]"
             )
             missing_cell = str(row["missing_chunks"])
         table.add_row(
