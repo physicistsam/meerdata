@@ -108,7 +108,9 @@ def _score_markers(detect: dict) -> tuple[int, dict[str, bool]]:
 
     for env_var, expected in (detect.get("env") or {}).items():
         actual = os.environ.get(env_var, "")
-        markers[f"env:{env_var}"] = bool(actual) and expected.lower() in actual.lower()
+        markers[f"env:{env_var}"] = (
+            bool(actual) and str(expected).lower() in actual.lower()
+        )
 
     hostname = socket.getfqdn().lower()
     for substr in detect.get("hostname_contains", []):

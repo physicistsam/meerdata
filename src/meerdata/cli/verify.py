@@ -43,9 +43,9 @@ def _check_chunk_completeness(rdb_path, block_dir):
     for data_type, info in dataset.source.data.chunk_info.items():
         expected = prod(len(axis_chunks) for axis_chunks in info["chunks"])
         chunk_dir = block_dir / info["prefix"] / data_type
-        actual = len(list(chunk_dir.glob("**/*.npy"))) if chunk_dir.exists() else 0
+        actual = sum(1 for _ in chunk_dir.glob("**/*.npy")) if chunk_dir.exists() else 0
         if actual != expected:
-            missing_chunks += expected - actual
+            missing_chunks += max(expected - actual, 0)
             warning(f"{chunk_dir}: expected {expected} chunks, found {actual}")
     return missing_chunks
 

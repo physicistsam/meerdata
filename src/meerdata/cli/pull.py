@@ -53,7 +53,7 @@ def pull(
     """Download a data block."""
     cbid, _token = _extract_cbid_and_token_from_rdb_link(rdb_link)
 
-    # Set up directories. Each download is saved to dest/<cbid> with 3 subdirectoies
+    # Set up directories. Each download is saved to dest/<cbid> with 3 subdirectories
     # inside: <cbid>, <cbid>-sdp-l0, and <cbid>-sdp-l1-flags. The local RDB file lives
     # in the first subdirectory. MS file lives inside the main directory.
     dest = data_folder / cbid

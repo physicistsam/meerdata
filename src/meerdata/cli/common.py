@@ -1,5 +1,6 @@
 """Shared CLI settings, option decorators, validators, and small helpers."""
 
+import urllib.parse
 from pathlib import Path
 
 import click
@@ -183,7 +184,7 @@ venv_option = click.option(
 
 full_tmp_folder_option = click.option(
     "--full-tmp-folder",
-    type=click.Path(exists=True, resolve_path=True, path_type=Path),
+    type=click.Path(resolve_path=True, file_okay=False, path_type=Path),
     default=None,
     show_default=False,
     help=(
@@ -212,20 +213,22 @@ slurm_override_option = click.option(
 
 def _extract_cbid_and_token_from_rdb_link(rdb_link):
     """Extract CBID and token from RDB link URL."""
-    if not rdb_link.startswith("http"):
+    parsed = urllib.parse.urlsplit(rdb_link)
+    if parsed.scheme not in ("http", "https"):
         raise click.ClickException("RDB link must be a valid URL starting with http")
 
     # Extract CBID from URL path (e.g., /1756679237/1756679237_sdp_l0.full.rdb)
-    try:
-        cbid = rdb_link.split("/")[3]  # https://archive-gw-1.kat.ac.za/1756679237/...
-    except IndexError:
+    path_parts = [p for p in parsed.path.split("/") if p]
+    if not path_parts:
         raise click.ClickException("Invalid RDB link format: cannot extract CBID")
+    cbid = path_parts[0]
 
     # Extract token from query parameter
-    if "?token=" not in rdb_link:
+    query = urllib.parse.parse_qs(parsed.query)
+    if "token" not in query:
         raise click.ClickException("RDB link must contain a token parameter")
 
-    token = rdb_link.split("?token=")[1]
+    token = query["token"][0]
 
     return cbid, token
 

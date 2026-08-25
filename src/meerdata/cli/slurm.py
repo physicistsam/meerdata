@@ -254,9 +254,11 @@ def _create_sbatch_script(
 
 def _wrap_for_slurm(step, body, cbid, site, slurm_override=None):
     """Wrap a plain step body into a full sbatch script using site.slurm config."""
-    if step == "download" and site.slurm.modules:
-        module_lines = "\n".join(f"module load {m}" for m in site.slurm.modules)
-        body = f"{module_lines}\n{body} || {site.slurm.scontrol_path} requeue $SLURM_JOB_ID"
+    if step == "download":
+        if site.slurm.modules:
+            module_lines = "\n".join(f"module load {m}" for m in site.slurm.modules)
+            body = f"{module_lines}\n{body}"
+        body = f"{body} || {site.slurm.scontrol_path} requeue $SLURM_JOB_ID"
 
     return _create_sbatch_script(
         STEP_JOB_NAMES[step],
