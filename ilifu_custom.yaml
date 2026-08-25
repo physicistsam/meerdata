@@ -1,0 +1,55 @@
+# Site config for the Ilifu HPC cluster (https://www.ilifu.ac.za/).
+
+detect:
+  env:
+    SLURM_CLUSTER_NAME: "ilifu"
+  hostname_contains: ["ilifu"]
+  hostname_suffix: [".ilifu.ac.za"]
+  path_exists:
+    - "/idia/projects"
+    - "/idia/projects/meerklass"
+  command:
+    name: "lsid"
+    output_contains: "ilifu"
+  min_markers: 2
+
+scheduler: slurm
+
+paths:
+  venv: "/idia/projects/meerklass/virtualenv/museek-0.7dev"
+  data_folder: "/idia/projects/meerklass/MEERKLASS-1/raw_data"
+  sanity_check_folder: "/idia/projects/meerklass/MEERKLASS-1/museek/sanity_checks"
+
+slurm:
+  modules: ["rclone"]
+  scontrol_path: "/opt/slurm/bin/scontrol"
+
+  # Applied to every generated job. Any SBATCH-compatible "--flag=value" is
+  # allowed here, e.g. add "--mail-user=you@example.com" for notifications.
+  options:
+    - "--account=b205-meerklass-ag"
+    - "--partition=Main"
+
+  # Per-step options, merged on top of `options` above (step values win on
+  # conflicting flags).
+  resources:
+    download:
+      - "--cpus-per-task=16"
+      - "--mem=16GB"
+      - "--time=10:00:00"
+    auto:
+      - "--cpus-per-task=24"
+      - "--mem=50GB"
+      - "--time=02:00:00"
+    ms:
+      - "--cpus-per-task=24"
+      - "--mem=50GB"
+      - "--time=06:00:00"
+    cleanup:
+      - "--cpus-per-task=1"
+      - "--mem=1GB"
+      - "--time=0:30:00"
+    sanity-check:
+      - "--cpus-per-task=1"
+      - "--mem=4GB"
+      - "--time=00:10:00"

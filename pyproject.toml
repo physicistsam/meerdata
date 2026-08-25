@@ -25,6 +25,7 @@ dependencies = [
     "click",
     "rich",
     "pyyaml",
+    "katdal",
     "museek @ git+https://github.com/meerklass/museek.git",
 ]
 

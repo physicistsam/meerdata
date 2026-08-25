@@ -1,13 +1,93 @@
 """`meerdata verify` command."""
 
 import subprocess
+from math import prod
 
 import click
+import katdal
 from rich.table import Table
 
 from meerdata.cli import cli
 from meerdata.cli.common import data_folder_option
 from meerdata.cli.console import console, failure, header, warning
+
+
+def _check_disk_usage(block_dir):
+    """Return total disk usage of `block_dir` in GB, or "ERR" on failure."""
+    try:
+        du_proc = subprocess.run(
+            ["du", "-sBG", str(block_dir)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        du_out = du_proc.stdout.strip().split()[0]
+        # Remove trailing 'G' and convert to int
+        return int(du_out.rstrip("G"))
+    except (subprocess.CalledProcessError, OSError, ValueError, IndexError) as e:
+        failure(f"Error getting disk usage for {block_dir}: {e}")
+        return "ERR"
+
+
+def _check_chunk_completeness(rdb_path, block_dir):
+    """Return the number of missing chunk files, or None if the RDB could
+    not be opened with katdal.
+    """
+    try:
+        dataset = katdal.open(str(rdb_path))
+    except Exception as e:
+        failure(f"Failed to open {rdb_path} with katdal: {e}")
+        return None
+
+    missing_chunks = 0
+    for data_type, info in dataset.source.data.chunk_info.items():
+        expected = prod(len(axis_chunks) for axis_chunks in info["chunks"])
+        chunk_dir = block_dir / info["prefix"] / data_type
+        actual = len(list(chunk_dir.glob("**/*.npy"))) if chunk_dir.exists() else 0
+        if actual != expected:
+            missing_chunks += expected - actual
+            warning(
+                f"{chunk_dir}: expected {expected} chunks, found {actual}"
+            )
+    return missing_chunks
+
+
+def _verify_block(block_dir, bn):
+    """Verify a single data block and return its summary row."""
+    rdb_path = block_dir / bn / f"{bn}_sdp_l0.full.rdb"
+    if not block_dir.exists():
+        failure(f"{block_dir} does not exist.")
+        return {
+            "bn": bn,
+            "rdb_exists": False,
+            "missing_chunks": None,
+            "size_gb": 0,
+        }
+
+    size_gb = _check_disk_usage(block_dir)
+    if size_gb == 0:
+        warning(f"{block_dir} exists but is empty (disk usage: 0 GB)")
+
+    if not rdb_path.exists():
+        failure(f"{rdb_path} does not exist.")
+        return {
+            "bn": bn,
+            "rdb_exists": False,
+            "missing_chunks": None,
+            "size_gb": size_gb,
+        }
+
+    console.print(f"  [green]✓[/green] {rdb_path} exists")
+    missing_chunks = _check_chunk_completeness(rdb_path, block_dir)
+    if missing_chunks == 0:
+        console.print(f"  [green]✓[/green] {block_dir} data is complete")
+
+    return {
+        "bn": bn,
+        "rdb_exists": True,
+        "missing_chunks": missing_chunks,
+        "size_gb": size_gb,
+    }
 
 
 @cli.command()
@@ -21,47 +101,32 @@ from meerdata.cli.console import console, failure, header, warning
 )
 @data_folder_option
 def verify(block_number, data_folder):
-    """Verify existent and disk usage of data blocks."""
+    """Verify existence and completeness of data blocks."""
     header(f"Verifying {len(block_number)} block(s) in {data_folder}")
-    summary = []
-    for bn in block_number:
-        block_dir = data_folder / bn
-        if block_dir.exists() and block_dir.is_dir():
-            # Get disk usage in GB
-            try:
-                du_proc = subprocess.run(
-                    ["du", "-sBG", str(block_dir)],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                du_out = du_proc.stdout.strip().split()[0]
-                # Remove trailing 'G' and convert to int
-                size_gb = int(du_out.rstrip("G"))
-            except (
-                subprocess.CalledProcessError,
-                OSError,
-                ValueError,
-                IndexError,
-            ) as e:
-                size_gb = "ERR"
-                failure(f"Error getting disk usage for {block_dir}: {e}")
-            if size_gb == 0:
-                warning(f"{block_dir} exists but is empty (disk usage: 0 GB)")
-            else:
-                console.print(
-                    f"  [green]✓[/green] {block_dir} exists, disk usage: {size_gb} GB"
-                )
-            summary.append((bn, True, size_gb))
-        else:
-            failure(f"{block_dir} does not exist.")
-            summary.append((bn, False, 0))
+    summary = [_verify_block(data_folder / bn, bn) for bn in block_number]
+    # Group failing blocks together, ahead of fully-verified ones.
+    summary.sort(key=lambda row: row["rdb_exists"] and row["missing_chunks"] == 0)
 
     table = Table(title="Summary Report")
     table.add_column("Block Number")
-    table.add_column("Exists")
+    table.add_column("RDB Exists")
+    table.add_column("Data Complete")
+    table.add_column("Missing Chunks", justify="right")
     table.add_column("Disk Usage (GB)", justify="right")
-    for bn, exists, size_gb in summary:
-        exists_cell = "[green]YES[/green]" if exists else "[red]NO[/red]"
-        table.add_row(bn, exists_cell, str(size_gb))
+    for row in summary:
+        rdb_cell = "[green]YES[/green]" if row["rdb_exists"] else "[red]NO[/red]"
+        if not row["rdb_exists"]:
+            complete_cell, missing_cell = "-", "-"
+        elif row["missing_chunks"] is None:
+            complete_cell, missing_cell = "[red]ERROR[/red]", "-"
+        else:
+            complete_cell = (
+                "[green]YES[/green]"
+                if row["missing_chunks"] == 0
+                else "[red]NO[/red]"
+            )
+            missing_cell = str(row["missing_chunks"])
+        table.add_row(
+            row["bn"], rdb_cell, complete_cell, missing_cell, str(row["size_gb"])
+        )
     console.print(table)
