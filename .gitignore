@@ -5,3 +5,5 @@ venv/
 *.sbatch
 build/
 *.egg-info/
+CLAUDE.md
+.vscode/

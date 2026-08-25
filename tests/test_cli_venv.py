@@ -5,6 +5,11 @@ from click.testing import CliRunner
 
 from meerdata.cli import cli
 
+# Force SLURM-mode (sbatch generation) regardless of what machine tests run
+# on; without this, site auto-detection would resolve to "local" here and
+# skip sbatch generation entirely.
+SITE_ARGS = ["--site", "ilifu"]
+
 
 def make_fake_venv(tmp_path: Path) -> Path:
     venv = tmp_path / "venv_fake"
@@ -33,6 +38,7 @@ def test_pull_includes_venv_source(tmp_path: Path, monkeypatch):
     result = runner.invoke(
         cli,
         [
+            *SITE_ARGS,
             "pull",
             "-r",
             rdb_link,
@@ -60,6 +66,46 @@ def test_pull_includes_venv_source(tmp_path: Path, monkeypatch):
     assert f"source {venv}/bin/activate" not in cleanup_script.read_text()
 
 
+def test_pull_dry_run_prints_sbatch_content(tmp_path: Path, monkeypatch, caplog):
+    """--dry-run should print each generated sbatch script's content, not just its path."""
+    runner = CliRunner()
+    data_folder = tmp_path / "data"
+    data_folder.mkdir()
+    venv = make_fake_venv(tmp_path)
+
+    rdb_link = (
+        "https://archive-gw-1.kat.ac.za/7777777777/7777777777_sdp_l0.full.rdb?token=tok"
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    caplog.set_level("INFO", logger="meerdata")
+    result = runner.invoke(
+        cli,
+        [
+            *SITE_ARGS,
+            "pull",
+            "-r",
+            rdb_link,
+            "--data-folder",
+            str(data_folder),
+            "--venv",
+            str(venv),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    cbid = "7777777777"
+    auto_script = tmp_path / "sbatch" / f"local_extract_auto-{cbid}.sbatch"
+    assert auto_script.exists(), auto_script
+    content = auto_script.read_text()
+
+    assert "Created sbatch script:" in caplog.text
+    assert content in result.output
+
+
 def test_check_includes_venv_source(tmp_path: Path, monkeypatch):
     runner = CliRunner()
     venv = make_fake_venv(tmp_path)
@@ -75,10 +121,11 @@ def test_check_includes_venv_source(tmp_path: Path, monkeypatch):
     result = runner.invoke(
         cli,
         [
+            *SITE_ARGS,
             "check",
             "-r",
             rdb_link,
-            "--context-folder",
+            "--sanity-check-folder",
             str(context),
             "--venv",
             str(venv),
@@ -94,6 +141,49 @@ def test_check_includes_venv_source(tmp_path: Path, monkeypatch):
 
     content = sanity_script.read_text()
     assert f"source {venv}/bin/activate" in content
+
+
+def make_fake_conda_env(tmp_path: Path) -> Path:
+    conda_env = tmp_path / "conda_env_fake"
+    (conda_env / "conda-meta").mkdir(parents=True)
+    return conda_env
+
+
+def test_pull_includes_conda_activate(tmp_path: Path, monkeypatch):
+    runner = CliRunner()
+    data_folder = tmp_path / "data"
+    data_folder.mkdir()
+    conda_env = make_fake_conda_env(tmp_path)
+
+    rdb_link = "https://archive-gw-1.kat.ac.za/1234567891/1234567891_sdp_l0.full.rdb?token=abcd"
+
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        cli,
+        [
+            *SITE_ARGS,
+            "pull",
+            "-r",
+            rdb_link,
+            "--data-folder",
+            str(data_folder),
+            "--venv",
+            str(conda_env),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    cbid = "1234567891"
+    auto_script = tmp_path / "sbatch" / f"local_extract_auto-{cbid}.sbatch"
+    assert auto_script.exists(), auto_script
+
+    content = auto_script.read_text()
+    assert 'eval "$(conda shell.bash hook)"' in content
+    assert f"conda activate {conda_env}" in content
+    assert f"source {conda_env}/bin/activate" not in content
 
 
 def test_pull_no_cleanup(tmp_path: Path, monkeypatch):
@@ -112,6 +202,7 @@ def test_pull_no_cleanup(tmp_path: Path, monkeypatch):
     result = runner.invoke(
         cli,
         [
+            *SITE_ARGS,
             "pull",
             "-r",
             rdb_link,
@@ -149,6 +240,7 @@ def test_pull_creates_cleanup(tmp_path: Path, monkeypatch):
     result = runner.invoke(
         cli,
         [
+            *SITE_ARGS,
             "pull",
             "-r",
             rdb_link,
@@ -185,6 +277,7 @@ def test_pull_venv_validation_errors(tmp_path: Path, monkeypatch):
     result_missing = runner.invoke(
         cli,
         [
+            *SITE_ARGS,
             "pull",
             "-r",
             rdb_link,
@@ -207,6 +300,7 @@ def test_pull_venv_validation_errors(tmp_path: Path, monkeypatch):
     result_bad = runner.invoke(
         cli,
         [
+            *SITE_ARGS,
             "pull",
             "-r",
             rdb_link,
@@ -240,6 +334,7 @@ def test_extract_includes_venv_source(tmp_path: Path, monkeypatch):
     result = runner.invoke(
         cli,
         [
+            *SITE_ARGS,
             "extract",
             "--rdb-file",
             str(rdb_file),
@@ -280,6 +375,7 @@ def test_extract_venv_validation_errors(tmp_path: Path, monkeypatch):
     result_missing = runner.invoke(
         cli,
         [
+            *SITE_ARGS,
             "extract",
             "--rdb-file",
             str(rdb_file),
@@ -301,6 +397,7 @@ def test_extract_venv_validation_errors(tmp_path: Path, monkeypatch):
     result_bad = runner.invoke(
         cli,
         [
+            *SITE_ARGS,
             "extract",
             "--rdb-file",
             str(rdb_file),
@@ -332,10 +429,11 @@ def test_check_venv_validation_errors(tmp_path: Path, monkeypatch):
     result_missing = runner.invoke(
         cli,
         [
+            *SITE_ARGS,
             "check",
             "-r",
             rdb_link,
-            "--context-folder",
+            "--sanity-check-folder",
             str(context),
             "--venv",
             "/path/does/not/exist",
@@ -354,10 +452,11 @@ def test_check_venv_validation_errors(tmp_path: Path, monkeypatch):
     result_bad = runner.invoke(
         cli,
         [
+            *SITE_ARGS,
             "check",
             "-r",
             rdb_link,
-            "--context-folder",
+            "--sanity-check-folder",
             str(context),
             "--venv",
             str(bad_venv),
