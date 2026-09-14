@@ -62,6 +62,11 @@ def test_detect_site_with_markers(monkeypatch):
         stderr = ""
 
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: DummyRun())
+    # Isolate this from whatever real filesystem the test happens to run on
+    # (e.g. a CHPC login node genuinely has /mnt/lustre/users and
+    # /home/apps/chpc, which would otherwise satisfy chpc.yaml's own
+    # path_exists markers and win over ilifu since "chpc" sorts first).
+    monkeypatch.setattr(sites.Path, "exists", lambda self: False)
 
     assert sites.detect_site() == "ilifu"
 

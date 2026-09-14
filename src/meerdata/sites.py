@@ -36,6 +36,28 @@ class SlurmConfig:
 
 
 @dataclass
+class PbsConfig:
+    """PBS settings for a site (used when `scheduler: pbs`).
+
+    Mirrors `SlurmConfig`: `options`/`resources[step]` are raw PBS directive
+    strings without the `#PBS ` prefix (e.g. `"-l select=1:ncpus=24:mem=50gb"`,
+    `"-P myproject"`). Merged the same way `SlurmConfig` is (see
+    `merge_slurm_options`, reused as-is since its key-extraction logic is
+    generic to any `-x value`/`--x=value`-shaped option string, not
+    SLURM-specific).
+
+    There is no `download` entry in `resources`: on a `pbs` site, `download`
+    always runs locally in the foreground (compute nodes have no internet),
+    never as a submitted PBS job -- see `_run_data_jobs` in `cli/slurm.py`.
+    """
+
+    modules: list[str] = field(default_factory=list)
+    qsub_path: str = "qsub"
+    options: list[str] = field(default_factory=list)
+    resources: dict[str, list[str]] = field(default_factory=dict)
+
+
+@dataclass
 class SitePaths:
     venv: Path | None = None
     data_folder: Path | None = None
@@ -48,6 +70,7 @@ class SiteConfig:
     scheduler: str
     paths: SitePaths
     slurm: SlurmConfig
+    pbs: PbsConfig = field(default_factory=PbsConfig)
 
     @classmethod
     def from_dict(cls, name: str, data: dict) -> "SiteConfig":
@@ -64,11 +87,19 @@ class SiteConfig:
             options=slurm_data.get("options", []),
             resources=slurm_data.get("resources", {}),
         )
+        pbs_data = data.get("pbs") or {}
+        pbs = PbsConfig(
+            modules=pbs_data.get("modules", []),
+            qsub_path=pbs_data.get("qsub_path", "qsub"),
+            options=pbs_data.get("options", []),
+            resources=pbs_data.get("resources", {}),
+        )
         return cls(
             name=name,
             scheduler=data.get("scheduler", "slurm"),
             paths=paths,
             slurm=slurm,
+            pbs=pbs,
         )
 
 

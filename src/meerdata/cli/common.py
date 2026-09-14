@@ -230,11 +230,13 @@ slurm_override_option = click.option(
     type=str,
     multiple=True,
     help=(
-        "Override a SLURM sbatch directive for this run, e.g. "
-        '--slurm-override "--mem=64GB". Can be repeated. Applies to every '
-        "job step in this invocation uniformly (not per-step); for "
-        "per-step tuning, use a custom --site-config instead. Ignored "
-        '(with a warning) when the resolved site\'s scheduler is "local".'
+        "Override a scheduler directive for this run, e.g. "
+        '--slurm-override "--mem=64GB" on a SLURM site, or '
+        '--slurm-override "-l select=1:ncpus=8:mem=32gb" on a PBS site. '
+        "Can be repeated. Applies to every job step in this invocation "
+        "uniformly (not per-step); for per-step tuning, use a custom "
+        "--site-config instead. Ignored (with a warning) when the "
+        'resolved site\'s scheduler is "local".'
     ),
 )
 

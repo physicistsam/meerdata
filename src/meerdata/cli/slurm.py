@@ -1,6 +1,8 @@
-"""Job-step bodies, SLURM sbatch wrapping/submission, and local execution."""
+"""Job-step bodies, SLURM sbatch wrapping/submission, PBS qsub
+wrapping/submission, and local execution."""
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -25,6 +27,9 @@ STEP_JOB_NAMES = {
 }
 STEP_EXTRA_SLURM_OPTIONS = {
     "sanity-check": ["--requeue"],
+}
+STEP_EXTRA_PBS_OPTIONS = {
+    "sanity-check": ["-r y"],  # rerunnable: PBS's nearest equivalent to --requeue
 }
 LOCAL_RUN_ORDER = ["download", "sanity-check", "auto", "ms", "cleanup"]
 
@@ -217,6 +222,22 @@ def _resolve_step_cpus(site, step, slurm_override=None):
     return int(value) if value else 1
 
 
+def _resolve_step_cpus_pbs(site, step, pbs_override=None):
+    """Effective ncpus for a step on a PBS site, including any override.
+
+    PBS resource requests are a single `-l select=1:ncpus=N:mem=...` string
+    rather than a standalone `--cpus-per-task=N` flag, so this greps `ncpus=`
+    out of whichever merged `-l` directive ends up in effect for the step.
+    """
+    merged = merge_slurm_options(site.pbs.options, site.pbs.resources.get(step, []))
+    merged = merge_slurm_options(merged, list(pbs_override or []))
+    for opt in merged:
+        match = re.search(r"ncpus=(\d+)", opt)
+        if match:
+            return int(match.group(1))
+    return 1
+
+
 def _create_sbatch_script(
     job_name,
     cbid,
@@ -269,6 +290,151 @@ def _wrap_for_slurm(step, body, cbid, site, slurm_override=None):
         script_body=body,
         slurm_override=slurm_override,
     )
+
+
+def _create_pbs_script(
+    job_name,
+    cbid,
+    site_options=None,
+    step_options=None,
+    extra_options=None,
+    script_body="",
+    pbs_override=None,
+):
+    """Create a standardized PBS qsub script.
+
+    Directives are merged with increasing priority: base (job name/output/
+    error paths) < site-wide `pbs.options` < step-specific `pbs.resources` <
+    step-fixed `extra_options` (e.g. `-r y`) < `-s`/`--slurm-override`
+    (reused as a generic per-invocation override for PBS sites too).
+
+    Unlike `sbatch`, a `qsub` job starts in `$HOME`, not the submission
+    directory, hence the explicit `cd "$PBS_O_WORKDIR"`.
+    """
+    base_options = [
+        f"-N {job_name}-{cbid}",
+        "-o logs/",
+        "-e logs/",
+    ]
+    options = merge_slurm_options(base_options, site_options or [])
+    options = merge_slurm_options(options, step_options or [])
+    options = merge_slurm_options(options, extra_options or [])
+    options = merge_slurm_options(options, list(pbs_override or []))
+
+    pbs_header = "\n".join(f"#PBS {opt}" for opt in options)
+
+    return f"""#!/bin/bash
+{pbs_header}
+
+cd "$PBS_O_WORKDIR"
+
+{script_body}
+"""
+
+
+def _wrap_for_pbs(step, body, cbid, site, pbs_override=None):
+    """Wrap a plain step body into a full qsub script using site.pbs config.
+
+    `download` is never passed to this function: on a `pbs` site it always
+    runs locally before this point (see `_run_data_jobs`), so there is no
+    module-load/requeue-on-failure special case to mirror from
+    `_wrap_for_slurm` here.
+    """
+    if site.pbs.modules:
+        module_lines = "\n".join(f"module load {m}" for m in site.pbs.modules)
+        body = f"{module_lines}\n{body}"
+
+    return _create_pbs_script(
+        STEP_JOB_NAMES[step],
+        cbid,
+        site_options=site.pbs.options,
+        step_options=site.pbs.resources.get(step, []),
+        extra_options=STEP_EXTRA_PBS_OPTIONS.get(step),
+        script_body=body,
+        pbs_override=pbs_override,
+    )
+
+
+def _submit_pbs_job(script_path, dependency=None):
+    """Submit a PBS job and return the job ID.
+
+    `dependency`, if given, is a full `afterok:<jobid>[:<jobid>...]` string,
+    same shape as passed to `_submit_job` for SLURM.
+    """
+    cmd = ["qsub"]
+    if dependency:
+        cmd.extend(["-W", f"depend={dependency}"])
+    cmd.append(str(script_path))
+
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return result.stdout.strip().split()[-1]
+
+
+def _submit_pbs_jobs(scripts, cbid, dry_run=False):
+    """Write qsub scripts and submit jobs with proper dependencies.
+
+    `download` is never a key in `scripts` here -- it already ran locally
+    (in the foreground) before `_run_data_jobs` calls this, so there is no
+    download job ID for the extraction jobs to depend on.
+
+    Args:
+        scripts: Dictionary of step name to rendered qsub script content
+        cbid: Block ID
+        dry_run: If True, create scripts but don't submit jobs
+    """
+    sbatch_dir = Path("./sbatch")
+    sbatch_dir.mkdir(parents=True, exist_ok=True)
+
+    script_files = {}
+    for script_type, content in scripts.items():
+        if script_type in ["auto", "ms"]:
+            filename = f"local_extract_{script_type}-{cbid}.pbs"
+        elif script_type == "sanity-check":
+            filename = f"sanity-check-{cbid}.pbs"
+        else:  # cleanup
+            filename = f"{script_type}-{cbid}.pbs"
+
+        script_files[script_type] = sbatch_dir / filename
+        with open(script_files[script_type], "w") as f:
+            f.write(content)
+        success(f"Created PBS script: {script_files[script_type]}")
+        if dry_run:
+            _print_script(content)
+
+    if dry_run:
+        warning("Dry run mode: Scripts created but not submitted")
+        return
+
+    job_ids = []
+
+    if "sanity-check" in script_files:
+        sanity_id = _submit_pbs_job(script_files["sanity-check"])
+        job_ids.append(sanity_id)
+        success(f"Submitted sanity check job: {sanity_id}")
+
+    extraction_jobs = []
+
+    if "auto" in script_files:
+        auto_id = _submit_pbs_job(script_files["auto"])
+        extraction_jobs.append(auto_id)
+        job_ids.append(auto_id)
+        success(f"Submitted auto extraction job: {auto_id}")
+
+    if "ms" in script_files:
+        ms_id = _submit_pbs_job(script_files["ms"])
+        extraction_jobs.append(ms_id)
+        job_ids.append(ms_id)
+        success(f"Submitted MS extraction job: {ms_id}")
+
+    if "cleanup" in script_files:
+        cleanup_dependency = (
+            f"afterok:{':'.join(extraction_jobs)}" if extraction_jobs else None
+        )
+        cleanup_id = _submit_pbs_job(script_files["cleanup"], cleanup_dependency)
+        job_ids.append(cleanup_id)
+        success(f"Submitted cleanup job: {cleanup_id}")
+
+    header(f"All jobs submitted with IDs: {','.join(job_ids)}")
 
 
 def _submit_job(script_path, dependency=None):
@@ -395,8 +561,9 @@ def _run_data_jobs(
     dry_run=False,
     slurm_override=None,
 ):
-    """Build step bodies and either submit them to SLURM or run them locally."""
-    if slurm_override and site.scheduler != "slurm":
+    """Build step bodies and either submit them to a scheduler or run them
+    locally."""
+    if slurm_override and site.scheduler not in ("slurm", "pbs"):
         warning(
             "--slurm-override is ignored because the resolved site's "
             f'scheduler is "{site.scheduler}".'
@@ -405,6 +572,10 @@ def _run_data_jobs(
     if site.scheduler == "slurm":
         cpus_by_step = {
             step: _resolve_step_cpus(site, step, slurm_override) for step in steps
+        }
+    elif site.scheduler == "pbs":
+        cpus_by_step = {
+            step: _resolve_step_cpus_pbs(site, step, slurm_override) for step in steps
         }
     else:
         cpus_by_step = dict.fromkeys(steps, os.cpu_count() or 1)
@@ -425,6 +596,27 @@ def _run_data_jobs(
 
     if site.scheduler == "local":
         _run_local_steps(step_bodies, dry_run)
+        return
+
+    if site.scheduler == "pbs":
+        # PBS-site compute nodes have no internet access, so `download` can
+        # never be a batch job here -- it must already be running in the
+        # foreground of whatever (expected: persistent screen/tmux) session
+        # invoked this command, typically on the site's dedicated
+        # data-transfer node. Run it now and only submit the remaining steps
+        # to PBS once it succeeds (`_run_local_steps` uses `check=True`, so a
+        # failed download raises and this never reaches the qsub calls).
+        if "download" in step_bodies:
+            _run_local_steps({"download": step_bodies.pop("download")}, dry_run)
+
+        if not step_bodies:
+            return
+
+        scripts = {
+            step: _wrap_for_pbs(step, body, cbid, site, slurm_override)
+            for step, body in step_bodies.items()
+        }
+        _submit_pbs_jobs(scripts, cbid, dry_run)
         return
 
     scripts = {

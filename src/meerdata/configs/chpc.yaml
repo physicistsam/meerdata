@@ -1,0 +1,62 @@
+# Site config for the CHPC Lengau cluster (https://www.chpc.ac.za/).
+#
+# Lengau uses PBS Pro, not SLURM, and compute nodes have no internet access.
+# Because of that, `download` (the rclone/mvf_download.py step that pulls
+# from the SARAO archive) is never submitted as a PBS job -- meerdata always
+# runs it locally in the foreground, before submitting the remaining steps
+# to PBS. See CHPC_SETUP.md in MOTF-newsetup for the full writeup: `download`
+# is expected to run inside a persistent `screen`/`tmux` session on
+# scp.chpc.ac.za (CHPC's dedicated data-transfer node), not on the shared
+# login node lengau.chpc.ac.za and never on a compute node.
+#
+# TODO before real use: fill in the real PBS project code / queue name below
+# (currently placeholders) and the real paths for this project's data/venv.
+
+detect:
+  # Lengau's actual FQDN (login1.cm.cluster) doesn't contain "chpc.ac.za", so
+  # hostname alone isn't a reliable marker here -- `qstat --version` (PBS
+  # Pro's own version string, mirrors how ilifu.yaml uses `lsid`) plus the
+  # CHPC-specific filesystem paths are used instead. Both are required
+  # (min_markers: 2) so a bare `path_exists` hit alone (which checks the real
+  # filesystem even under mocked-environment tests) can't misfire detection.
+  path_exists:
+    - "/mnt/lustre/users"
+    - "/home/apps/chpc"
+  command:
+    name: "qstat"
+    output_contains: "pbs_version"
+  min_markers: 2
+
+scheduler: pbs
+
+paths:
+  venv: null
+  data_folder: null
+  sanity_check_folder: null
+
+pbs:
+  modules: []
+  qsub_path: "qsub"
+
+  # Applied to every generated job. Any qsub-compatible "-flag value" or
+  # "-flag=value" directive is allowed here.
+  options:
+    - "-P <CHPC_PROJECT_CODE>"
+    - "-q normal"
+
+  # Per-step options, merged on top of `options` above (step values win on
+  # conflicting flags). No `download` entry: that step never runs under PBS
+  # on this site (see note above).
+  resources:
+    auto:
+      - "-l select=1:ncpus=24:mem=50gb"
+      - "-l walltime=00:30:00"
+    ms:
+      - "-l select=1:ncpus=24:mem=50gb"
+      - "-l walltime=06:00:00"
+    cleanup:
+      - "-l select=1:ncpus=1:mem=1gb"
+      - "-l walltime=00:30:00"
+    sanity-check:
+      - "-l select=1:ncpus=1:mem=4gb"
+      - "-l walltime=00:08:00"
