@@ -9,8 +9,20 @@
 # scp.chpc.ac.za (CHPC's dedicated data-transfer node), not on the shared
 # login node lengau.chpc.ac.za and never on a compute node.
 #
-# TODO before real use: fill in the real PBS project code / queue name below
-# (currently placeholders) and the real paths for this project's data/venv.
+# Project code, queue, and paths below are filled in from what's already
+# confirmed working for this account's other CHPC pipelines (MWA_*, see
+# ~/softy/MWA_vis_analysis/docs/chpc_context/chpc_pbs_submission.md) as of
+# 2026-09-14. **`-P ASTR0945` is this account's general astronomy project
+# code on Lengau -- confirm with the PI/CHPC allocation admin that it also
+# covers MeerKLASS/meerdata work before relying on it; it was not granted
+# specifically for this project.** Queue choice per that doc, checked
+# against this cluster's live `qstat -Qf`:
+#   - `smp`    : resources_min.ncpus=24, max 96h -- a whole 24-core/128GB
+#                node guaranteed. Used for auto/ms (ncpus=24 requests).
+#   - `serial` : max ncpus 24, max 48h, shares a node, RAM not guaranteed.
+#                Used for cleanup/sanity-check (ncpus=1 requests) -- `normal`
+#                would be wrong for these, since it forces resources_min.
+#                ncpus=25 (2+ nodes) which a 1-cpu request can't satisfy.
 
 detect:
   # Lengau's actual FQDN (login1.cm.cluster) doesn't contain "chpc.ac.za", so
@@ -29,10 +41,19 @@ detect:
 
 scheduler: pbs
 
+# Storage note: /mnt/lustre is CHPC's large Lustre scratch/project filesystem
+# (petabyte-scale, distinct from $HOME which is a much smaller NFS mount) --
+# same filesystem the stimela container images already live on (see
+# CHPC_SETUP.md). It is subject to periodic automated cleanup (this account
+# has had files removed by a "lustre-clean" pass before, evidenced by
+# `lustre-clean-*.log` files dropped in-place under
+# /mnt/lustre/users/schatterjee/) -- do not treat it as permanent archival
+# storage for raw MS/rdb data; move anything long-lived off to proper
+# archival storage once processed.
 paths:
-  venv: null
-  data_folder: null
-  sanity_check_folder: null
+  venv: "/home/schatterjee/vnv/vnv_meerdata"
+  data_folder: "/mnt/lustre/users/schatterjee/meerklass/raw_data"
+  sanity_check_folder: "/mnt/lustre/users/schatterjee/meerklass/sanity_checks"
 
 pbs:
   modules: []
@@ -41,8 +62,8 @@ pbs:
   # Applied to every generated job. Any qsub-compatible "-flag value" or
   # "-flag=value" directive is allowed here.
   options:
-    - "-P <CHPC_PROJECT_CODE>"
-    - "-q normal"
+    - "-P ASTR0945"
+    - "-q smp"
 
   # Per-step options, merged on top of `options` above (step values win on
   # conflicting flags). No `download` entry: that step never runs under PBS
@@ -55,8 +76,10 @@ pbs:
       - "-l select=1:ncpus=24:mem=50gb"
       - "-l walltime=06:00:00"
     cleanup:
+      - "-q serial"
       - "-l select=1:ncpus=1:mem=1gb"
       - "-l walltime=00:30:00"
     sanity-check:
+      - "-q serial"
       - "-l select=1:ncpus=1:mem=4gb"
       - "-l walltime=00:08:00"
